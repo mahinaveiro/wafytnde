@@ -11,12 +11,13 @@ export default defineConfig({
       manifest: {
         name: 'Wafytnde',
         short_name: 'Wafytnde',
-        description: 'An offline-first local note library.',
+        description:
+          'Capture thoughts instantly, organize them into bundles, projects, and notes, and keep everything offline and private.',
         display: 'standalone',
         start_url: '/',
         scope: '/',
-        background_color: '#f5edd9',
-        theme_color: '#f0c24b',
+        background_color: '#f3e9d2',
+        theme_color: '#e6b450',
         icons: [
           {
             src: '/pwa-192.png',
