@@ -412,6 +412,7 @@ function App() {
 
   function navigate(nextView: ViewKey) {
     setDetailFullscreen(false)
+    if (nextView !== 'note' && isMobileLayout()) setSelectedNoteId(undefined)
     setView(nextView)
     setSettings(patchSettings({ lastView: nextView }))
   }
@@ -1177,6 +1178,7 @@ function Sidebar(props: {
   onOpenBundle: (bundle: Bundle) => void
   onToggleCollapse: () => void
 }) {
+  const pinnedBundles = props.bundles.filter((bundle) => bundle.pinned)
   return (
     <aside className="sidebar">
       <div className="app-mark">
@@ -1211,13 +1213,13 @@ function Sidebar(props: {
       {!props.collapsed && (
         <div className="sidebar-bundles">
           <div className="sidebar-heading">Pinned bundles</div>
-          {props.bundles.slice(0, 6).map((bundle) => (
+          {pinnedBundles.slice(0, 6).map((bundle) => (
             <button key={bundle.id} type="button" onClick={() => props.onOpenBundle(bundle)}>
               <span className="color-dot" style={{ background: bundle.color }} />
               <span>{bundle.title}</span>
             </button>
           ))}
-          {props.bundles.length === 0 && <p>Nothing here yet.</p>}
+          {pinnedBundles.length === 0 && <p>Nothing pinned yet.</p>}
         </div>
       )}
       <div className="sidebar-footer">
@@ -1368,6 +1370,7 @@ function DashboardPanel(props: {
   onCreateNote: () => Promise<void>
   onOpenInbox: () => void
 }) {
+  const pinnedBundles = props.activeBundles.filter((bundle) => bundle.pinned)
   return (
     <div className="panel-stack">
       <PanelHeader
@@ -1410,14 +1413,14 @@ function DashboardPanel(props: {
         </CollapsibleSection>
         <CollapsibleSection icon={<FolderOpen size={15} />} title="Pinned bundles" defaultOpen>
           <div className="bundle-tile-list">
-            {props.activeBundles.slice(0, 5).map((bundle) => (
+            {pinnedBundles.slice(0, 5).map((bundle) => (
               <button key={bundle.id} type="button" onClick={() => props.onOpenBundle(bundle)}>
                 <span className="color-dot" style={{ background: bundle.color }} />
                 <strong>{bundle.title}</strong>
                 <small>{oneLine(bundle.description, 'No description.')}</small>
               </button>
             ))}
-            {props.activeBundles.length === 0 && <EmptyMini body="Nothing here yet." />}
+            {pinnedBundles.length === 0 && <EmptyMini body="Nothing pinned yet." />}
           </div>
         </CollapsibleSection>
       </section>
@@ -1754,12 +1757,14 @@ function BundlePanel(props: {
           </div>
         </CollapsibleSection>
       )}
-      <BundleEditCard
-        bundle={props.bundle}
-        onSave={(patch) => updateBundle(props.bundle.id, patch)}
-        onArchive={() => props.onArchive('bundle', props.bundle.id, props.bundle.title)}
-        onDelete={() => props.onDelete('bundle', props.bundle.id, props.bundle.title)}
-      />
+      {props.tab === 'overview' && (
+        <BundleEditCard
+          bundle={props.bundle}
+          onSave={(patch) => updateBundle(props.bundle.id, patch)}
+          onArchive={() => props.onArchive('bundle', props.bundle.id, props.bundle.title)}
+          onDelete={() => props.onDelete('bundle', props.bundle.id, props.bundle.title)}
+        />
+      )}
     </div>
   )
 }

@@ -821,6 +821,10 @@ time {
   min-height: 110px;
 }
 
+.inline-detail-card {
+  display: none;
+}
+
 .bundle-grid,
 .card-grid {
   display: grid;
@@ -1886,6 +1890,7 @@ kbd {
   }
 
   .app-root[data-view="note"] .middle-panel,
+  .app-root[data-view="dashboard"] .detail-panel,
   .app-root[data-view="bundle"] .detail-panel,
   .app-root[data-view="project"] .detail-panel,
   .app-root[data-view="bundles"] .detail-panel,
@@ -1898,6 +1903,10 @@ kbd {
   }
 
   .app-root[data-view="note"] .detail-panel {
+    display: block;
+  }
+
+  .inline-detail-card {
     display: block;
   }
 
