@@ -3,4 +3,5 @@
 
 interface Window {
   wafytndeUpdateSW?: (reloadPage?: boolean) => Promise<void>
+  wafytndeServiceWorkerRegistration?: ServiceWorkerRegistration
 }

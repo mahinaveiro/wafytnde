@@ -48,6 +48,7 @@ import {
   useRef,
   useState,
 } from 'react'
+import { ChangelogModal } from './components/ChangelogModal'
 import {
   archiveRecord,
   clearAllData,
@@ -70,6 +71,8 @@ import {
   updateTodoItem,
   updateTodoList,
 } from './lib/db'
+import { UpdateReadyModal } from './components/UpdateReadyModal'
+import { WhatsNewToast } from './components/WhatsNewToast'
 import {
   createBackup,
   downloadBackup,
@@ -85,6 +88,10 @@ import {
   resetLocalSettings,
 } from './lib/settings'
 import {
+  ROUTE_AFTER_UPDATE_KEY,
+  useAppUpdate,
+} from './hooks/useAppUpdate'
+import {
   APP_NAME,
   type AppSettings,
   type BackupPreview,
@@ -99,6 +106,7 @@ import {
   type TodoList,
   type WafytndeBackup,
 } from './lib/types'
+import { APP_VERSION, formatAppReleaseDate } from './lib/version'
 
 type ViewKey =
   | 'dashboard'
@@ -269,11 +277,16 @@ function isTypingTarget(target: EventTarget | null) {
   return tag === 'input' || tag === 'textarea' || tag === 'select' || target.isContentEditable
 }
 
+function getInitialView() {
+  if (localStorage.getItem(ROUTE_AFTER_UPDATE_KEY) === 'desk') return 'dashboard'
+
+  const lastView = getSettings().lastView
+  return isViewKey(lastView) ? lastView : 'dashboard'
+}
+
 function App() {
   const [settings, setSettings] = useState<AppSettings>(() => getSettings())
-  const [view, setView] = useState<ViewKey>(() =>
-    isViewKey(getSettings().lastView) ? (getSettings().lastView as ViewKey) : 'dashboard',
-  )
+  const [view, setView] = useState<ViewKey>(() => getInitialView())
   const [selectedBundleId, setSelectedBundleId] = useState<string>()
   const [selectedProjectId, setSelectedProjectId] = useState<string>()
   const [selectedNoteId, setSelectedNoteId] = useState<string>()
@@ -291,7 +304,7 @@ function App() {
   const [toasts, setToasts] = useState<Toast[]>([])
   const [online, setOnline] = useState(() => navigator.onLine)
   const [offlineReady, setOfflineReady] = useState(false)
-  const [updateReady, setUpdateReady] = useState(false)
+  const [highlightAbout, setHighlightAbout] = useState(false)
   const [storage, setStorage] = useState<StorageEstimate>({})
   const [exportStatus, setExportStatus] = useState<'idle' | 'collecting' | 'packing' | 'ready'>(
     'idle',
@@ -299,6 +312,13 @@ function App() {
   const [importState, setImportState] = useState<ImportState>({ busy: false })
   const toastIdRef = useRef(0)
   const paneGridRef = useRef<HTMLDivElement | null>(null)
+  const appUpdate = useAppUpdate({
+    onRouteAfterUpdate: () => navigate('dashboard'),
+    onOpenChangelog: () => {
+      setHighlightAbout(true)
+      window.setTimeout(() => setHighlightAbout(false), 2200)
+    },
+  })
 
   const data = useLiveQuery(async () => {
     const [bundles, projects, notes, todoLists, todoItems, quickCaptures] = await Promise.all([
@@ -345,20 +365,14 @@ function App() {
       setOfflineReady(true)
       pushToast('Offline app shell is ready.')
     }
-    const onUpdateReady = () => {
-      setUpdateReady(true)
-      pushToast('A fresh app shell is waiting.')
-    }
     window.addEventListener('online', onOnline)
     window.addEventListener('offline', onOffline)
     window.addEventListener('wafytnde:offline-ready', onOfflineReady)
-    window.addEventListener('wafytnde:update-ready', onUpdateReady)
     refreshStorage()
     return () => {
       window.removeEventListener('online', onOnline)
       window.removeEventListener('offline', onOffline)
       window.removeEventListener('wafytnde:offline-ready', onOfflineReady)
-      window.removeEventListener('wafytnde:update-ready', onUpdateReady)
     }
   }, [])
 
@@ -781,6 +795,12 @@ function App() {
     if (command === 'search') navigate('search')
   }
 
+  function viewWhatsNewInSettings() {
+    appUpdate.dismissWhatsNew()
+    navigate('settings')
+    appUpdate.openChangelog()
+  }
+
   function renderMainPanel() {
     if (view === 'dashboard') {
       return (
@@ -960,7 +980,8 @@ function App() {
         settings={settings}
         online={online}
         offlineReady={offlineReady}
-        updateReady={updateReady}
+        updateReady={appUpdate.updateAvailable}
+        highlightAbout={highlightAbout}
         storage={storage}
         exportStatus={exportStatus}
         importState={importState}
@@ -970,10 +991,9 @@ function App() {
         onApplyImport={applyImport}
         onRefreshStorage={refreshStorage}
         onReset={handleResetData}
-        onReloadUpdate={() => {
-          void window.wafytndeUpdateSW?.(true)
-          setUpdateReady(false)
-        }}
+        onReloadUpdate={appUpdate.refreshToUpdate}
+        onCheckUpdate={appUpdate.checkForUpdate}
+        onOpenChangelog={appUpdate.openChangelog}
       />
     )
   }
@@ -1042,6 +1062,14 @@ function App() {
   }
 
   const paneStyle = { '--middle-pane-size': `${paneSplit * 100}%` } as CSSProperties
+  const modalOpen =
+    !settings.onboardingComplete ||
+    quickCaptureOpen ||
+    commandOpen ||
+    Boolean(confirmState) ||
+    appUpdate.showUpdateModal ||
+    appUpdate.showChangelog
+  const whatsNewVisible = appUpdate.showWhatsNew && !modalOpen
 
   return (
     <main
@@ -1081,7 +1109,7 @@ function App() {
           searchQuery={searchQuery}
           online={online}
           offlineReady={offlineReady}
-          updateReady={updateReady}
+          updateReady={appUpdate.updateAvailable}
           onSearch={(query) => {
             setSearchQuery(query)
             navigate('search')
@@ -1089,10 +1117,7 @@ function App() {
           onCommand={() => setCommandOpen(true)}
           onCapture={() => setQuickCaptureOpen(true)}
           onNewNote={() => void handleCreateNote()}
-          onApplyUpdate={() => {
-            void window.wafytndeUpdateSW?.(true)
-            setUpdateReady(false)
-          }}
+          onApplyUpdate={() => void appUpdate.refreshToUpdate()}
         />
 
         <div className="pane-grid" ref={paneGridRef} style={paneStyle}>
@@ -1110,7 +1135,7 @@ function App() {
       </section>
 
       <MobileNav activeView={view} onNavigate={navigate} />
-      {view === 'dashboard' && (
+      {view === 'dashboard' && !modalOpen && !whatsNewVisible && (
         <button
           type="button"
           className="mobile-capture"
@@ -1140,6 +1165,17 @@ function App() {
           onClose={() => setConfirmState(null)}
         />
       )}
+      <UpdateReadyModal
+        show={appUpdate.showUpdateModal}
+        onLater={appUpdate.dismissUpdateForSession}
+        onRefresh={appUpdate.refreshToUpdate}
+      />
+      <ChangelogModal show={appUpdate.showChangelog} onClose={appUpdate.closeChangelog} />
+      <WhatsNewToast
+        show={whatsNewVisible}
+        onDismiss={appUpdate.dismissWhatsNew}
+        onViewSettings={viewWhatsNewInSettings}
+      />
       {toasts.length > 0 && (
         <div className="toast-stack" aria-live="polite">
           {toasts.map((toast) => (
@@ -1977,7 +2013,7 @@ function TrashPanel(props: {
     <div className="panel-stack">
       <PanelHeader
         eyebrow="Trash"
-        title="Recoverable until you empty it."
+        title="Restore if you changed your mind"
         actions={
           records.length > 0 && (
             <button type="button" className="danger-button" onClick={props.onEmpty}>
@@ -2020,6 +2056,7 @@ function SettingsPanel(props: {
   online: boolean
   offlineReady: boolean
   updateReady: boolean
+  highlightAbout: boolean
   storage: StorageEstimate
   exportStatus: 'idle' | 'collecting' | 'packing' | 'ready'
   importState: ImportState
@@ -2029,7 +2066,9 @@ function SettingsPanel(props: {
   onApplyImport: (mode: 'merge' | 'replace') => Promise<void>
   onRefreshStorage: () => Promise<void>
   onReset: () => void
-  onReloadUpdate: () => void
+  onReloadUpdate: () => Promise<void> | void
+  onCheckUpdate: () => Promise<void>
+  onOpenChangelog: () => void
 }) {
   const exportLabel =
     props.exportStatus === 'collecting'
@@ -2165,10 +2204,17 @@ function SettingsPanel(props: {
           <span>{props.online ? 'Network online' : 'Network offline'}</span>
           <span>{props.offlineReady ? 'Offline app shell ready' : 'Offline shell will cache after build'}</span>
           <span>{props.updateReady ? 'Update available' : 'No waiting update'}</span>
-          <button type="button" onClick={props.onReloadUpdate}>
-            <RefreshCw size={15} />
-            Re-cache app shell
-          </button>
+          {props.updateReady ? (
+            <button type="button" className="primary-button" onClick={() => void props.onReloadUpdate()}>
+              <RefreshCw size={15} />
+              Refresh now
+            </button>
+          ) : (
+            <button type="button" onClick={() => void props.onCheckUpdate()}>
+              <RefreshCw size={15} />
+              Check for updates
+            </button>
+          )}
         </div>
       </section>
       <section className="window-panel">
@@ -2186,9 +2232,18 @@ function SettingsPanel(props: {
           <span>Export data</span>
         </div>
       </section>
-      <section className="window-panel">
+      <section className={clsx('window-panel about-panel', props.highlightAbout && 'highlight')}>
         <WindowTitle icon={<BookOpen size={15} />} title="About" />
-        <p>{APP_NAME} version 0.1.0</p>
+        <div className="about-body">
+          <div>
+            <h3>{APP_NAME}</h3>
+            <p>Version {APP_VERSION}</p>
+            <p>Updated {formatAppReleaseDate()}</p>
+          </div>
+          <button type="button" onClick={props.onOpenChangelog}>
+            What changed
+          </button>
+        </div>
       </section>
     </div>
   )
@@ -2707,6 +2762,7 @@ function TodoListCard(props: {
   const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('all')
   const [text, setText] = useState('')
   const [draftTitle, setDraftTitle] = useState(props.list.title)
+  const taskInputRef = useRef<HTMLInputElement | null>(null)
   const completed = props.items.filter((item) => item.completed).length
   const nextTitle = draftTitle.trim() || 'New todo list'
   const titleChanged = nextTitle !== props.list.title
@@ -2722,16 +2778,27 @@ function TodoListCard(props: {
     if (target instanceof HTMLElement && target.closest('button,input,label,select,textarea,a')) return
     setEditing(true)
   }
-  async function saveEdits() {
-    if (!canSave) return
+  async function saveTitleIfNeeded() {
     if (titleChanged) {
       await updateTodoList(props.list.id, { title: nextTitle })
+      setDraftTitle(nextTitle)
     }
+  }
+  async function addTaskAndKeepEditing() {
+    if (!taskChanged) return
+    await saveTitleIfNeeded()
+    await createTodoItem(props.list.id, text.trim())
+    setText('')
+    if (filter === 'completed') setFilter('all')
+    window.setTimeout(() => taskInputRef.current?.focus(), 0)
+  }
+  async function saveEdits() {
+    if (!canSave) return
+    await saveTitleIfNeeded()
     if (taskChanged) {
       await createTodoItem(props.list.id, text.trim())
     }
     setText('')
-    setDraftTitle(nextTitle)
     setEditing(false)
   }
   function cancelEdits() {
@@ -2786,11 +2853,16 @@ function TodoListCard(props: {
             className="todo-add"
             onSubmit={(event) => {
               event.preventDefault()
-              void saveEdits()
+              void addTaskAndKeepEditing()
             }}
           >
-            <input value={text} placeholder="Add task" onChange={(event) => setText(event.target.value)} />
-            <button type="submit" aria-label="Save todo changes" title="Save todo changes" disabled={!canSave}>
+            <input
+              ref={taskInputRef}
+              value={text}
+              placeholder="Add task"
+              onChange={(event) => setText(event.target.value)}
+            />
+            <button type="submit" aria-label="Add task" title="Add task" disabled={!taskChanged}>
               <Check size={14} />
             </button>
           </form>

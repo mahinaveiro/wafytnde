@@ -75,9 +75,15 @@ src/
   index.css               Retro responsive visual system
   main.tsx                React bootstrapping and PWA update hooks
   components/
+    ChangelogModal.tsx    Latest release notes modal
     ErrorBoundary.tsx     Runtime error fallback
+    UpdateReadyModal.tsx  Service worker update prompt
+    WhatsNewToast.tsx     Post-refresh release notes card
+  hooks/
+    useAppUpdate.ts       Version and service worker update flow
   lib/
     db.ts                 Dexie schema and data operations
+    version.ts            App version, release date, and changelog
     types.ts              Shared data model types
     backup.ts             Export/import validation and backup helpers
     settings.ts           Local preference storage
@@ -200,11 +206,21 @@ User data is not stored on a server. It lives in IndexedDB on the device. Moving
 ## Development Notes
 
 - Main app data belongs in IndexedDB, not localStorage.
-- localStorage is only for small preferences such as theme, font mode, compact mode, reduced motion, onboarding state, and last view.
+- localStorage is only for small preferences such as theme, font mode, compact mode, reduced motion, onboarding state, last view, and update notification flags.
 - The editor should stay lightweight and fast.
 - Destructive actions should remain confirmable.
 - Import must never destroy existing data unless the user explicitly chooses replace and confirms.
 - The UI should keep its compact utility character. Avoid generic startup SaaS patterns.
+
+## Release Workflow
+
+1. Update `APP_VERSION` in `src/lib/version.ts`.
+2. Update `APP_RELEASE_DATE`.
+3. Update `APP_CHANGELOG`.
+4. Commit changes.
+5. Push to GitHub.
+6. Deploy on Vercel.
+7. Existing users will see the update prompt when the new service worker/app shell is ready.
 
 ## Testing
 
