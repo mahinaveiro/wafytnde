@@ -1,12 +1,11 @@
-export const APP_VERSION = '0.1.2'
+export const APP_VERSION = '0.2.1'
 
-export const APP_RELEASE_DATE = '2026-04-29'
+export const APP_RELEASE_DATE = '2026-04-30'
 
 export const APP_CHANGELOG = [
-  'Improved dark mode readability',
-  'Added update notification flow',
-  'Polished mobile layout spacing',
-  'Fixed backup import validation',
+  'Fixed mobile appearance personalization controls',
+  'Removed duplicate color swatches from personalization rows',
+  'Improved panel tint enable and no tint states',
 ] as const
 
 export function formatAppReleaseDate(date = APP_RELEASE_DATE) {

@@ -16,6 +16,13 @@ export type ProjectStatus = 'idea' | 'active' | 'paused' | 'completed' | 'archiv
 export type ThemeMode = 'warm' | 'paper' | 'terminal'
 export type FontMode = 'sans' | 'serif' | 'mono'
 
+export interface AppearanceOverrides {
+  topBarColor?: string
+  accentColor?: string
+  primaryTextColor?: string
+  panelTintColor?: string
+}
+
 export interface BaseRecord {
   id: string
   workspaceId: string
@@ -88,6 +95,7 @@ export interface AppSettings {
   fontMode: FontMode
   compactMode: boolean
   reduceMotion: boolean
+  appearanceOverrides?: AppearanceOverrides
   onboardingComplete: boolean
   sidebarCollapsed: boolean
   lastView: string

@@ -50,7 +50,9 @@ The goal is simple:
 - Global search across bundles, projects, notes, todos, tags, and captures.
 - Command menu for power-user actions.
 - Archive, restore, trash, permanent delete, and empty trash flows.
-- Settings for theme, note font, compact mode, reduced motion, storage status, offline status, shortcuts, and app reset.
+- Settings for theme, note font, controlled appearance personalization, compact mode, reduced motion, update checks, storage status, offline status, user manual, shortcuts, and app reset.
+- Update notification flow with manual update check feedback.
+- Mobile user manual for practical in-app guidance.
 - JSON backup export and validated import with merge or replace modes.
 - Duplicate-safe merge import that remaps IDs while preserving relationships.
 
@@ -206,13 +208,36 @@ User data is not stored on a server. It lives in IndexedDB on the device. Moving
 ## Development Notes
 
 - Main app data belongs in IndexedDB, not localStorage.
-- localStorage is only for small preferences such as theme, font mode, compact mode, reduced motion, onboarding state, last view, and update notification flags.
+- localStorage is only for small preferences such as theme, font mode, controlled appearance overrides, compact mode, reduced motion, onboarding state, last view, and update notification flags.
 - The editor should stay lightweight and fast.
 - Destructive actions should remain confirmable.
 - Import must never destroy existing data unless the user explicitly chooses replace and confirms.
 - The UI should keep its compact utility character. Avoid generic startup SaaS patterns.
 
-## Release Workflow
+## Changelog
+
+### v0.2.1 — 2026-04-30
+
+- Fixed mobile appearance personalization controls.
+- Removed duplicate color swatches from personalization rows.
+- Improved panel tint enable and no tint states.
+
+### v0.2.0 — 2026-04-29
+
+- Added appearance personalization controls.
+- Improved bundle color controls.
+- Improved open note picker UX.
+- Added mobile user manual section.
+- Fixed update check feedback behavior.
+
+### v0.1.2 — 2026-04-29
+
+- Improved dark mode readability.
+- Added update notification flow.
+- Polished mobile layout spacing.
+- Fixed backup import validation.
+
+## Releasing a new version
 
 1. Update `APP_VERSION` in `src/lib/version.ts`.
 2. Update `APP_RELEASE_DATE`.
@@ -220,7 +245,6 @@ User data is not stored on a server. It lives in IndexedDB on the device. Moving
 4. Commit changes.
 5. Push to GitHub.
 6. Deploy on Vercel.
-7. Existing users will see the update prompt when the new service worker/app shell is ready.
 
 ## Testing
 

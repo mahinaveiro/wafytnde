@@ -44,6 +44,7 @@ import {
   type PointerEvent,
   type ReactNode,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -84,15 +85,19 @@ import { searchAll } from './lib/search'
 import {
   defaultSettings,
   getSettings,
+  isValidHexColor,
+  normalizeHexColor,
   patchSettings,
   resetLocalSettings,
 } from './lib/settings'
 import {
   ROUTE_AFTER_UPDATE_KEY,
+  type UpdateCheckResult,
   useAppUpdate,
 } from './hooks/useAppUpdate'
 import {
   APP_NAME,
+  type AppearanceOverrides,
   type AppSettings,
   type BackupPreview,
   type Bundle,
@@ -150,6 +155,21 @@ type ImportState = {
   busy: boolean
 }
 
+type UpdateCheckNotice = {
+  title: string
+  body: string
+  detail?: string
+}
+
+type AppearanceDraft = {
+  topBarColor: string
+  accentColor: string
+  primaryTextColor: string
+  panelTintColor: string
+}
+
+type ThemeAppearanceDefaults = Omit<AppearanceDraft, 'panelTintColor'>
+
 const emptyData: LoadedData = {
   bundles: [],
   projects: [],
@@ -193,6 +213,61 @@ const entityLabels: Record<EntityType, string> = {
   todoItem: 'Todo item',
   quickCapture: 'Capture',
 }
+
+const appearanceDefaultsByTheme: Record<AppSettings['theme'], ThemeAppearanceDefaults> = {
+  warm: {
+    topBarColor: '#efc64f',
+    accentColor: '#d56d33',
+    primaryTextColor: '#241b14',
+  },
+  paper: {
+    topBarColor: '#e9cd6b',
+    accentColor: '#c6734a',
+    primaryTextColor: '#241b14',
+  },
+  terminal: {
+    topBarColor: '#24221d',
+    accentColor: '#b86a2f',
+    primaryTextColor: '#e6e0d2',
+  },
+}
+
+const userManualSections: Array<{
+  title: string
+  body: string
+  items: string[]
+}> = [
+  {
+    title: 'Getting started',
+    body: 'Begin with a note when you know what you want to write. Use a bundle when the thought belongs on a shelf.',
+    items: ['New note creates a local note immediately.', 'Bundles group notes, projects, and todo lists.'],
+  },
+  {
+    title: 'Editing notes',
+    body: 'The editor is quiet on purpose. Open a note, click into the paper, and start typing.',
+    items: ['Notes save automatically as you write.', 'Use the note controls to close, archive, trash, or focus the editor.'],
+  },
+  {
+    title: 'Todo lists',
+    body: 'Todo cards have an edit mode hidden in plain sight.',
+    items: ['To edit a todo list title, click on its background area.', 'Use the task field inside edit mode to add more tasks.'],
+  },
+  {
+    title: 'Organization system',
+    body: 'Wafytnde uses a small hierarchy so loose writing and structured work can live together.',
+    items: ['Bundles are top-level shelves.', 'Projects live inside bundles.', 'Notes can belong to a bundle or a project.'],
+  },
+  {
+    title: 'Inbox / Capture',
+    body: 'Capture is for fast, unsorted material that you can clean up later.',
+    items: ['Quick captures land in Inbox first.', 'Move a capture into a note or todo when you are ready.'],
+  },
+  {
+    title: 'Data & backups',
+    body: 'Your workspace is local to this device unless you export it.',
+    items: ['Export creates a JSON backup of records and preferences.', 'Import can merge with, or replace, local data.'],
+  },
+]
 
 function isViewKey(value: string): value is ViewKey {
   return viewKeys.has(value as ViewKey)
@@ -245,6 +320,122 @@ function readableStorage(value?: number) {
   if (!value) return '0 KB'
   if (value < 1024 * 1024) return `${Math.max(1, Math.round(value / 1024))} KB`
   return `${(value / 1024 / 1024).toFixed(1)} MB`
+}
+
+function getThemeAppearanceDefaults(theme: AppSettings['theme']): ThemeAppearanceDefaults {
+  return appearanceDefaultsByTheme[theme]
+}
+
+function appearanceDraftFromSettings(settings: AppSettings): AppearanceDraft {
+  const defaults = getThemeAppearanceDefaults(settings.theme)
+  return {
+    topBarColor: settings.appearanceOverrides?.topBarColor ?? defaults.topBarColor,
+    accentColor: settings.appearanceOverrides?.accentColor ?? defaults.accentColor,
+    primaryTextColor: settings.appearanceOverrides?.primaryTextColor ?? defaults.primaryTextColor,
+    panelTintColor: settings.appearanceOverrides?.panelTintColor ?? '',
+  }
+}
+
+function sanitizeAppearanceDraft(
+  draft: AppearanceDraft,
+  theme: AppSettings['theme'],
+): AppearanceOverrides | undefined {
+  const defaults = getThemeAppearanceDefaults(theme)
+  const next: AppearanceOverrides = {}
+  const topBarColor = normalizeHexColor(draft.topBarColor)
+  const accentColor = normalizeHexColor(draft.accentColor)
+  const primaryTextColor = normalizeHexColor(draft.primaryTextColor)
+  const panelTintColor = draft.panelTintColor.trim() ? normalizeHexColor(draft.panelTintColor) : undefined
+
+  if (topBarColor && topBarColor !== defaults.topBarColor) next.topBarColor = topBarColor
+  if (accentColor && accentColor !== defaults.accentColor) next.accentColor = accentColor
+  if (primaryTextColor && primaryTextColor !== defaults.primaryTextColor) {
+    next.primaryTextColor = primaryTextColor
+  }
+  if (panelTintColor) next.panelTintColor = panelTintColor
+
+  return Object.keys(next).length ? next : undefined
+}
+
+function appearanceDraftsEqual(left: AppearanceDraft, right: AppearanceDraft) {
+  return (
+    left.topBarColor.toLowerCase() === right.topBarColor.toLowerCase() &&
+    left.accentColor.toLowerCase() === right.accentColor.toLowerCase() &&
+    left.primaryTextColor.toLowerCase() === right.primaryTextColor.toLowerCase() &&
+    left.panelTintColor.toLowerCase() === right.panelTintColor.toLowerCase()
+  )
+}
+
+function appearanceDraftKey(draft: AppearanceDraft) {
+  return [
+    draft.topBarColor.toLowerCase(),
+    draft.accentColor.toLowerCase(),
+    draft.primaryTextColor.toLowerCase(),
+    draft.panelTintColor.toLowerCase(),
+  ].join('|')
+}
+
+function hexToRgba(hex: string, alpha: number) {
+  const normalized = normalizeHexColor(hex)
+  if (!normalized) return undefined
+
+  const value = normalized.slice(1)
+  const red = Number.parseInt(value.slice(0, 2), 16)
+  const green = Number.parseInt(value.slice(2, 4), 16)
+  const blue = Number.parseInt(value.slice(4, 6), 16)
+  return `rgba(${red}, ${green}, ${blue}, ${alpha})`
+}
+
+function applyAppearanceCssVariables(overrides?: AppearanceOverrides) {
+  const root = document.documentElement
+  const topBarColor = overrides?.topBarColor
+  const accentColor = overrides?.accentColor
+  const primaryTextColor = overrides?.primaryTextColor
+  const panelTintColor = overrides?.panelTintColor ? hexToRgba(overrides.panelTintColor, 0.16) : undefined
+
+  if (topBarColor) root.style.setProperty('--wafy-topbar-bg', topBarColor)
+  else root.style.removeProperty('--wafy-topbar-bg')
+
+  if (accentColor) root.style.setProperty('--wafy-accent', accentColor)
+  else root.style.removeProperty('--wafy-accent')
+
+  if (primaryTextColor) root.style.setProperty('--wafy-text-primary', primaryTextColor)
+  else root.style.removeProperty('--wafy-text-primary')
+
+  if (panelTintColor) root.style.setProperty('--wafy-panel-tint', panelTintColor)
+  else root.style.removeProperty('--wafy-panel-tint')
+}
+
+function relativeLuminance(hex: string) {
+  const normalized = normalizeHexColor(hex)
+  if (!normalized) return 0
+
+  const channels = [normalized.slice(1, 3), normalized.slice(3, 5), normalized.slice(5, 7)].map((part) => {
+    const value = Number.parseInt(part, 16) / 255
+    return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
+  })
+
+  return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722
+}
+
+function contrastRatio(hexA: string, hexB: string) {
+  const first = relativeLuminance(hexA)
+  const second = relativeLuminance(hexB)
+  const lighter = Math.max(first, second)
+  const darker = Math.min(first, second)
+  return (lighter + 0.05) / (darker + 0.05)
+}
+
+function hasAppearanceContrastWarning(draft: AppearanceDraft) {
+  if (
+    !isValidHexColor(draft.topBarColor) ||
+    !isValidHexColor(draft.accentColor) ||
+    !isValidHexColor(draft.primaryTextColor)
+  ) {
+    return false
+  }
+
+  return contrastRatio(draft.primaryTextColor, draft.topBarColor) < 3 || contrastRatio('#1d130c', draft.accentColor) < 2.4
 }
 
 function activeTodoItems(listId: string, items: TodoItem[]) {
@@ -301,6 +492,7 @@ function App() {
   const [quickCaptureOpen, setQuickCaptureOpen] = useState(false)
   const [commandOpen, setCommandOpen] = useState(false)
   const [confirmState, setConfirmState] = useState<ConfirmState | null>(null)
+  const [updateCheckNotice, setUpdateCheckNotice] = useState<UpdateCheckNotice | null>(null)
   const [toasts, setToasts] = useState<Toast[]>([])
   const [online, setOnline] = useState(() => navigator.onLine)
   const [offlineReady, setOfflineReady] = useState(false)
@@ -356,6 +548,7 @@ function App() {
     document.documentElement.dataset.font = settings.fontMode
     document.documentElement.dataset.compact = String(settings.compactMode)
     document.documentElement.dataset.reduceMotion = String(settings.reduceMotion)
+    applyAppearanceCssVariables(settings.appearanceOverrides)
   }, [settings])
 
   useEffect(() => {
@@ -801,6 +994,35 @@ function App() {
     appUpdate.openChangelog()
   }
 
+  function noticeForUpdateCheck(result: UpdateCheckResult): UpdateCheckNotice | null {
+    if (result.status === 'update-available') return null
+    if (result.status === 'up-to-date') {
+      return {
+        title: "You're up to date",
+        body: "You're already using the latest version of Wafytnde.",
+        detail: 'No updates available right now.',
+      }
+    }
+    if (result.status === 'unavailable') {
+      return {
+        title: 'Update check unavailable',
+        body: 'The offline app shell is not registered for this run.',
+        detail: 'Try again from the installed app or a production build.',
+      }
+    }
+    return {
+      title: 'Could not check updates',
+      body: 'Wafytnde could not reach the app update service.',
+      detail: 'Check your connection and try again.',
+    }
+  }
+
+  async function handleCheckUpdate() {
+    const result = await appUpdate.checkForUpdate({ revealModal: true })
+    const notice = noticeForUpdateCheck(result)
+    if (notice) setUpdateCheckNotice(notice)
+  }
+
   function renderMainPanel() {
     if (view === 'dashboard') {
       return (
@@ -992,7 +1214,7 @@ function App() {
         onRefreshStorage={refreshStorage}
         onReset={handleResetData}
         onReloadUpdate={appUpdate.refreshToUpdate}
-        onCheckUpdate={appUpdate.checkForUpdate}
+        onCheckUpdate={handleCheckUpdate}
         onOpenChangelog={appUpdate.openChangelog}
       />
     )
@@ -1067,6 +1289,7 @@ function App() {
     quickCaptureOpen ||
     commandOpen ||
     Boolean(confirmState) ||
+    Boolean(updateCheckNotice) ||
     appUpdate.showUpdateModal ||
     appUpdate.showChangelog
   const whatsNewVisible = appUpdate.showWhatsNew && !modalOpen
@@ -1163,6 +1386,12 @@ function App() {
         <ConfirmDialog
           state={confirmState}
           onClose={() => setConfirmState(null)}
+        />
+      )}
+      {updateCheckNotice && (
+        <UpdateCheckDialog
+          notice={updateCheckNotice}
+          onClose={() => setUpdateCheckNotice(null)}
         />
       )}
       <UpdateReadyModal
@@ -2070,6 +2299,7 @@ function SettingsPanel(props: {
   onCheckUpdate: () => Promise<void>
   onOpenChangelog: () => void
 }) {
+  const [checkingUpdate, setCheckingUpdate] = useState(false)
   const exportLabel =
     props.exportStatus === 'collecting'
       ? 'Collecting data'
@@ -2197,6 +2427,7 @@ function SettingsPanel(props: {
             <span>Reduce motion</span>
           </label>
         </div>
+        <AppearancePersonalization settings={props.settings} onPatch={props.onPatch} />
       </section>
       <section className="window-panel">
         <WindowTitle icon={<WifiOff size={15} />} title="PWA / Offline" />
@@ -2210,14 +2441,25 @@ function SettingsPanel(props: {
               Refresh now
             </button>
           ) : (
-            <button type="button" onClick={() => void props.onCheckUpdate()}>
+            <button
+              type="button"
+              disabled={checkingUpdate}
+              onClick={async () => {
+                setCheckingUpdate(true)
+                try {
+                  await props.onCheckUpdate()
+                } finally {
+                  setCheckingUpdate(false)
+                }
+              }}
+            >
               <RefreshCw size={15} />
-              Check for updates
+              {checkingUpdate ? 'Checking' : 'Check for updates'}
             </button>
           )}
         </div>
       </section>
-      <section className="window-panel">
+      <section className="window-panel shortcuts-panel">
         <WindowTitle icon={<Command size={15} />} title="Shortcuts" />
         <div className="shortcut-grid">
           <span>Ctrl/Cmd + K</span>
@@ -2232,6 +2474,7 @@ function SettingsPanel(props: {
           <span>Export data</span>
         </div>
       </section>
+      <UserManualPanel />
       <section className={clsx('window-panel about-panel', props.highlightAbout && 'highlight')}>
         <WindowTitle icon={<BookOpen size={15} />} title="About" />
         <div className="about-body">
@@ -2246,6 +2489,242 @@ function SettingsPanel(props: {
         </div>
       </section>
     </div>
+  )
+}
+
+function AppearancePersonalization(props: {
+  settings: AppSettings
+  onPatch: (patch: Partial<AppSettings>) => void
+}) {
+  const savedDraft = appearanceDraftFromSettings(props.settings)
+  const [status, setStatus] = useState<string>()
+
+  return (
+    <AppearancePersonalizationEditor
+      key={appearanceDraftKey(savedDraft)}
+      settings={props.settings}
+      savedDraft={savedDraft}
+      status={status}
+      onStatus={setStatus}
+      onPatch={props.onPatch}
+    />
+  )
+}
+
+function AppearancePersonalizationEditor(props: {
+  settings: AppSettings
+  savedDraft: AppearanceDraft
+  status?: string
+  onStatus: (status?: string) => void
+  onPatch: (patch: Partial<AppSettings>) => void
+}) {
+  const savedDraft = props.savedDraft
+  const [draft, setDraft] = useState<AppearanceDraft>(savedDraft)
+  const requiredInvalid =
+    !isValidHexColor(draft.topBarColor) ||
+    !isValidHexColor(draft.accentColor) ||
+    !isValidHexColor(draft.primaryTextColor)
+  const panelTintInvalid = Boolean(draft.panelTintColor.trim() && !isValidHexColor(draft.panelTintColor))
+  const hasDraftChanges = !appearanceDraftsEqual(draft, savedDraft)
+  const contrastWarning = hasAppearanceContrastWarning(draft)
+  const canReset = Boolean(props.settings.appearanceOverrides) || hasDraftChanges
+
+  function updateDraft(field: keyof AppearanceDraft, value: string) {
+    setDraft((current) => ({ ...current, [field]: value }))
+    props.onStatus(undefined)
+  }
+
+  function handleApply() {
+    if (requiredInvalid || panelTintInvalid) {
+      props.onStatus('Use valid #RRGGBB colors before applying.')
+      return
+    }
+
+    props.onPatch({ appearanceOverrides: sanitizeAppearanceDraft(draft, props.settings.theme) })
+    props.onStatus('Appearance updated.')
+  }
+
+  function handleReset() {
+    const defaults = getThemeAppearanceDefaults(props.settings.theme)
+    setDraft({ ...defaults, panelTintColor: '' })
+    props.onPatch({ appearanceOverrides: undefined })
+    props.onStatus('Default appearance restored.')
+  }
+
+  function handleCancel() {
+    setDraft(savedDraft)
+    props.onStatus('Changes discarded.')
+  }
+
+  return (
+    <div className="personalization-panel">
+      <div className="personalization-intro">
+        <h3>Personalization</h3>
+        <p>Optional color tweaks. Defaults stay untouched unless applied.</p>
+      </div>
+      <div className="personalization-layout">
+        <div className="personalization-controls">
+          <AppearanceColorControl
+            label="Top bar color"
+            value={draft.topBarColor}
+            fallback={getThemeAppearanceDefaults(props.settings.theme).topBarColor}
+            onChange={(value) => updateDraft('topBarColor', value)}
+          />
+          <AppearanceColorControl
+            label="Accent color"
+            value={draft.accentColor}
+            fallback={getThemeAppearanceDefaults(props.settings.theme).accentColor}
+            onChange={(value) => updateDraft('accentColor', value)}
+          />
+          <AppearanceColorControl
+            label="Primary text color"
+            value={draft.primaryTextColor}
+            fallback={getThemeAppearanceDefaults(props.settings.theme).primaryTextColor}
+            onChange={(value) => updateDraft('primaryTextColor', value)}
+          />
+          <AppearanceColorControl
+            label="Panel background tint"
+            value={draft.panelTintColor}
+            fallback="#fff9e9"
+            helper="Subtle overlay only. Leave blank for standard panels."
+            enabled={Boolean(draft.panelTintColor.trim())}
+            onEnabledChange={(enabled) => updateDraft('panelTintColor', enabled ? '#fff9e9' : '')}
+            onChange={(value) => updateDraft('panelTintColor', value)}
+          />
+        </div>
+        <AppearancePreview draft={draft} theme={props.settings.theme} />
+      </div>
+      {(requiredInvalid || panelTintInvalid || contrastWarning || props.status) && (
+        <p className={clsx('appearance-status', (requiredInvalid || panelTintInvalid) && 'error')}>
+          {requiredInvalid || panelTintInvalid
+            ? 'Use valid #RRGGBB colors before applying.'
+            : props.status ?? 'Some colors may reduce readability.'}
+        </p>
+      )}
+      <div className="button-row personalization-actions">
+        <button type="button" className="primary-button" disabled={!hasDraftChanges || requiredInvalid || panelTintInvalid} onClick={handleApply}>
+          Apply changes
+        </button>
+        <button type="button" disabled={!canReset} onClick={handleReset}>
+          Reset to default
+        </button>
+        {hasDraftChanges && (
+          <button type="button" onClick={handleCancel}>
+            Cancel changes
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function AppearanceColorControl(props: {
+  label: string
+  value: string
+  fallback: string
+  helper?: string
+  enabled?: boolean
+  onEnabledChange?: (enabled: boolean) => void
+  onChange: (value: string) => void
+}) {
+  const hexInputId = useId()
+  const colorInputId = useId()
+  const isOptional = Boolean(props.onEnabledChange)
+  const enabled = props.enabled ?? true
+  const pickerValue = normalizeHexColor(props.value) ?? props.fallback
+
+  return (
+    <div className="color-control">
+      <div className="color-control-label">
+        <label htmlFor={hexInputId}>{props.label}</label>
+        {props.helper && <small>{props.helper}</small>}
+      </div>
+      <div className={clsx('color-control-inputs', !enabled && 'disabled')}>
+        {isOptional && (
+          <label className="check-row panel-tint-toggle">
+            <input
+              type="checkbox"
+              checked={enabled}
+              onChange={(event) => props.onEnabledChange?.(event.target.checked)}
+            />
+            <span>Enable panel tint</span>
+          </label>
+        )}
+        {enabled ? (
+          <div className="color-control-row">
+            <input
+              id={colorInputId}
+              className="color-swatch-input"
+              type="color"
+              value={pickerValue}
+              aria-label={`Choose ${props.label.toLowerCase()}`}
+              onChange={(event) => props.onChange(event.target.value)}
+            />
+            <input
+              id={hexInputId}
+              className="color-hex-input"
+              value={props.value}
+              placeholder={props.fallback}
+              onChange={(event) => props.onChange(event.target.value)}
+              spellCheck={false}
+            />
+          </div>
+        ) : (
+          <span className="no-tint-label">No tint</span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function AppearancePreview(props: {
+  draft: AppearanceDraft
+  theme: AppSettings['theme']
+}) {
+  const defaults = getThemeAppearanceDefaults(props.theme)
+  const topBarColor = normalizeHexColor(props.draft.topBarColor) ?? defaults.topBarColor
+  const accentColor = normalizeHexColor(props.draft.accentColor) ?? defaults.accentColor
+  const primaryTextColor = normalizeHexColor(props.draft.primaryTextColor) ?? defaults.primaryTextColor
+  const panelTint = props.draft.panelTintColor.trim() ? hexToRgba(props.draft.panelTintColor, 0.2) : 'transparent'
+  const style = {
+    '--preview-topbar-bg': topBarColor,
+    '--preview-accent': accentColor,
+    '--preview-text': primaryTextColor,
+    '--preview-panel-tint': panelTint ?? 'transparent',
+  } as CSSProperties
+
+  return (
+    <div className="appearance-preview" style={style} aria-label="Appearance preview">
+      <div className="appearance-preview-topbar">
+        <span />
+        <strong>Wafytnde</strong>
+      </div>
+      <div className="appearance-preview-panel">
+        <p>Sample note text</p>
+        <button type="button">Sample button</button>
+      </div>
+    </div>
+  )
+}
+
+function UserManualPanel() {
+  return (
+    <section className="window-panel user-manual-panel">
+      <WindowTitle icon={<BookOpen size={15} />} title="User manual" />
+      <div className="manual-grid">
+        {userManualSections.map((section) => (
+          <article key={section.title} className="manual-card">
+            <h3>{section.title}</h3>
+            <p>{section.body}</p>
+            <ul>
+              {section.items.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          </article>
+        ))}
+      </div>
+    </section>
   )
 }
 
@@ -2453,6 +2932,65 @@ function NoteEditor(props: {
   )
 }
 
+function BundleColorField(props: {
+  value: string
+  onSave: (color: string) => Promise<void>
+}) {
+  const savedColor = normalizeHexColor(props.value) ?? '#efc64f'
+
+  return <BundleColorFieldEditor key={savedColor} value={savedColor} onSave={props.onSave} />
+}
+
+function BundleColorFieldEditor(props: {
+  value: string
+  onSave: (color: string) => Promise<void>
+}) {
+  const hexInputId = useId()
+  const [draft, setDraft] = useState(props.value)
+  const draftColor = normalizeHexColor(draft)
+
+  function commit(nextValue = draft) {
+    const color = normalizeHexColor(nextValue)
+    if (!color || color === props.value) return
+    void props.onSave(color)
+  }
+
+  return (
+    <div className="bundle-color-field">
+      <div className="color-control-label">
+        <label htmlFor={hexInputId}>Color</label>
+        <small>Swatch, hex, or picker.</small>
+      </div>
+      <input
+        className="color-swatch-input"
+        type="color"
+        value={draftColor ?? props.value}
+        aria-label="Choose bundle color"
+        onChange={(event) => {
+          setDraft(event.target.value)
+          void props.onSave(event.target.value)
+        }}
+      />
+      <input
+        id={hexInputId}
+        className="color-hex-input"
+        value={draft}
+        placeholder={props.value}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={() => commit()}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault()
+            commit()
+          }
+        }}
+        spellCheck={false}
+      />
+      {!draftColor && <small className="color-field-error">Use #RRGGBB.</small>}
+    </div>
+  )
+}
+
 function BundleInspector(props: {
   bundle: Bundle
   onSave: (patch: Partial<Bundle>) => Promise<void>
@@ -2472,10 +3010,7 @@ function BundleInspector(props: {
           onChange={(event) => void props.onSave({ description: event.target.value })}
         />
       </label>
-      <label>
-        <span>Color</span>
-        <input type="color" value={props.bundle.color} onChange={(event) => void props.onSave({ color: event.target.value })} />
-      </label>
+      <BundleColorField value={props.bundle.color} onSave={(color) => props.onSave({ color })} />
       <label className="check-row">
         <input
           type="checkbox"
@@ -2577,10 +3112,7 @@ function BundleEditCard(props: {
             onChange={(event) => void props.onSave({ description: event.target.value })}
           />
         </label>
-        <label>
-          <span>Color</span>
-          <input type="color" value={props.bundle.color} onChange={(event) => void props.onSave({ color: event.target.value })} />
-        </label>
+        <BundleColorField value={props.bundle.color} onSave={(color) => props.onSave({ color })} />
         <label className="check-row">
           <input
             type="checkbox"
@@ -3060,6 +3592,22 @@ function ConfirmDialog(props: { state: ConfirmState; onClose: () => void }) {
   )
 }
 
+function UpdateCheckDialog(props: { notice: UpdateCheckNotice; onClose: () => void }) {
+  return (
+    <Modal title={props.notice.title} onClose={props.onClose}>
+      <div className="update-check-panel">
+        <p>{props.notice.body}</p>
+        {props.notice.detail && <small>{props.notice.detail}</small>}
+        <div className="button-row update-check-actions">
+          <button type="button" className="primary-button" onClick={props.onClose}>
+            OK
+          </button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
 function OnboardingDialog(props: { onStart: () => void; onImport: () => void }) {
   return (
     <Modal title="Welcome to Wafytnde" onClose={props.onStart}>
@@ -3267,6 +3815,116 @@ function Inspector(props: { title: string; subtitle: string; children: ReactNode
   )
 }
 
+function NotePickerModal(props: {
+  notes: Note[]
+  onClose: () => void
+  onOpen: (note: Note) => void
+}) {
+  const [query, setQuery] = useState('')
+  const [selectedNoteId, setSelectedNoteId] = useState<string>()
+  const filteredNotes = props.notes.filter((note) => {
+    const haystack = `${note.title} ${note.body} ${note.tags.join(' ')}`.toLowerCase()
+    return haystack.includes(query.trim().toLowerCase())
+  })
+  const selectedNote =
+    filteredNotes.find((note) => note.id === selectedNoteId) ?? filteredNotes[0]
+
+  function openSelected() {
+    if (!selectedNote) return
+    props.onOpen(selectedNote)
+    props.onClose()
+  }
+
+  function moveSelection(direction: 1 | -1) {
+    if (filteredNotes.length === 0) return
+    const currentIndex = selectedNote
+      ? filteredNotes.findIndex((note) => note.id === selectedNote.id)
+      : -1
+    const nextIndex =
+      currentIndex < 0
+        ? 0
+        : Math.min(filteredNotes.length - 1, Math.max(0, currentIndex + direction))
+    setSelectedNoteId(filteredNotes[nextIndex]?.id)
+  }
+
+  function handleKeys(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      moveSelection(1)
+    }
+    if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      moveSelection(-1)
+    }
+    if (event.key === 'Enter') {
+      event.preventDefault()
+      openSelected()
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      props.onClose()
+    }
+  }
+
+  return (
+    <Modal title="Open note" onClose={props.onClose}>
+      <div className="note-picker" onKeyDown={handleKeys}>
+        <label className="search-page-input">
+          <Search size={18} />
+          <input
+            autoFocus
+            value={query}
+            placeholder="Search notes"
+            onChange={(event) => {
+              setQuery(event.target.value)
+              setSelectedNoteId(undefined)
+            }}
+          />
+        </label>
+        <div className="note-picker-list" role="listbox" aria-label="Notes">
+          {filteredNotes.map((note) => {
+            const selected = selectedNote?.id === note.id
+            return (
+              <button
+                key={note.id}
+                type="button"
+                role="option"
+                aria-selected={selected}
+                className={clsx(selected && 'selected')}
+                onMouseEnter={() => setSelectedNoteId(note.id)}
+                onFocus={() => setSelectedNoteId(note.id)}
+                onClick={() => {
+                  props.onOpen(note)
+                  props.onClose()
+                }}
+              >
+                <strong>{note.title}</strong>
+                <span>{oneLine(note.body, 'No body text yet.')}</span>
+                <small>Updated {displayDate(note.updatedAt)}</small>
+              </button>
+            )
+          })}
+          {filteredNotes.length === 0 && <EmptyMini body="No matching notes." />}
+        </div>
+        <div className="button-row note-picker-actions">
+          <button type="button" onClick={props.onClose}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="primary-button"
+            disabled={!selectedNote}
+            onClick={openSelected}
+          >
+            <FolderOpen size={15} />
+            Open
+          </button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
 function EditorBlankState(props: {
   notes?: Note[]
   onCreate: () => void
@@ -3274,8 +3932,6 @@ function EditorBlankState(props: {
 }) {
   const notes = props.notes ?? []
   const [pickerOpen, setPickerOpen] = useState(false)
-  const [noteId, setNoteId] = useState('')
-  const selectedNote = notes.find((note) => note.id === noteId) ?? notes[0]
 
   return (
     <section className="blank-editor">
@@ -3289,25 +3945,18 @@ function EditorBlankState(props: {
             New note
           </button>
           {props.onOpen && notes.length > 0 && (
-            <button type="button" onClick={() => setPickerOpen((current) => !current)}>
+            <button type="button" onClick={() => setPickerOpen(true)}>
               <FolderOpen size={15} />
               Open note
             </button>
           )}
         </div>
         {pickerOpen && props.onOpen && notes.length > 0 && (
-          <div className="blank-note-picker">
-            <select value={selectedNote?.id ?? ''} aria-label="Choose note to open" onChange={(event) => setNoteId(event.target.value)}>
-              {notes.map((note) => (
-                <option key={note.id} value={note.id}>
-                  {note.title}
-                </option>
-              ))}
-            </select>
-            <button type="button" onClick={() => selectedNote && props.onOpen?.(selectedNote)} disabled={!selectedNote}>
-              Open
-            </button>
-          </div>
+          <NotePickerModal
+            notes={notes}
+            onClose={() => setPickerOpen(false)}
+            onOpen={props.onOpen}
+          />
         )}
       </div>
     </section>

@@ -27,16 +27,13 @@ export function UpdateReadyModal(props: UpdateReadyModalProps) {
         aria-labelledby="update-ready-title"
       >
         <div className="window-titlebar">
-          <span id="update-ready-title">Update ready</span>
+          <span id="update-ready-title">Update available</span>
           <button type="button" aria-label="Later" onClick={props.onLater}>
             <X size={16} />
           </button>
         </div>
         <div className="modal-body update-ready-body">
-          <p>
-            A newer version of {APP_NAME} is available. Refresh to load the latest fixes and
-            improvements.
-          </p>
+          <p>A newer version of {APP_NAME} is ready.</p>
           <small>Your local notes and backups will stay safe.</small>
           <div className="button-row update-ready-actions">
             <button type="button" onClick={props.onLater}>

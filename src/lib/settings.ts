@@ -1,6 +1,7 @@
 import type { AppSettings } from './types'
 
 const SETTINGS_KEY = 'wafytnde.settings.v1'
+const HEX_COLOR_RE = /^#[0-9a-f]{6}$/i
 
 export const defaultSettings: AppSettings = {
   theme: 'warm',
@@ -12,22 +13,64 @@ export const defaultSettings: AppSettings = {
   lastView: 'dashboard',
 }
 
+export function normalizeHexColor(value: string) {
+  const trimmed = value.trim()
+  return HEX_COLOR_RE.test(trimmed) ? trimmed.toLowerCase() : undefined
+}
+
+export function isValidHexColor(value: string) {
+  return Boolean(normalizeHexColor(value))
+}
+
+export function normalizeAppearanceOverrides(value: unknown): AppSettings['appearanceOverrides'] {
+  if (!value || typeof value !== 'object') return undefined
+
+  const source = value as Record<string, unknown>
+  const next: NonNullable<AppSettings['appearanceOverrides']> = {}
+  const topBarColor = typeof source.topBarColor === 'string' ? normalizeHexColor(source.topBarColor) : undefined
+  const accentColor = typeof source.accentColor === 'string' ? normalizeHexColor(source.accentColor) : undefined
+  const primaryTextColor =
+    typeof source.primaryTextColor === 'string' ? normalizeHexColor(source.primaryTextColor) : undefined
+  const panelTintColor =
+    typeof source.panelTintColor === 'string' ? normalizeHexColor(source.panelTintColor) : undefined
+
+  if (topBarColor) next.topBarColor = topBarColor
+  if (accentColor) next.accentColor = accentColor
+  if (primaryTextColor) next.primaryTextColor = primaryTextColor
+  if (panelTintColor) next.panelTintColor = panelTintColor
+
+  return Object.keys(next).length ? next : undefined
+}
+
+function normalizeSettings(settings: Partial<AppSettings>): AppSettings {
+  const next: AppSettings = { ...defaultSettings, ...settings }
+  const appearanceOverrides = normalizeAppearanceOverrides(settings.appearanceOverrides)
+
+  if (appearanceOverrides) {
+    next.appearanceOverrides = appearanceOverrides
+  } else {
+    delete next.appearanceOverrides
+  }
+
+  return next
+}
+
 export function getSettings(): AppSettings {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY)
     if (!raw) return defaultSettings
-    return { ...defaultSettings, ...JSON.parse(raw) }
+    return normalizeSettings(JSON.parse(raw))
   } catch {
     return defaultSettings
   }
 }
 
 export function saveSettings(settings: AppSettings) {
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings))
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(normalizeSettings(settings)))
 }
 
 export function patchSettings(patch: Partial<AppSettings>): AppSettings {
-  const next = { ...getSettings(), ...patch }
+  const next = normalizeSettings({ ...getSettings(), ...patch })
   saveSettings(next)
   return next
 }
@@ -37,7 +80,7 @@ export function exportLocalSettings(): AppSettings {
 }
 
 export function importLocalSettings(settings: Partial<AppSettings>) {
-  saveSettings({ ...defaultSettings, ...settings })
+  saveSettings(normalizeSettings(settings))
 }
 
 export function resetLocalSettings() {

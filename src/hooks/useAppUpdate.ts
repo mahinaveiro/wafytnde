@@ -11,6 +11,17 @@ const SESSION_UPDATE_DISMISSED_VERSION_KEY = 'wafytnde:updateDismissedVersion:se
 const SESSION_UPDATE_REFRESHING_KEY = 'wafytnde:updateRefreshInProgress'
 const UPDATE_CHECK_INTERVAL_MS = 30 * 60 * 1000
 const UPDATE_RELOAD_FALLBACK_MS = 4000
+const UPDATE_INSTALL_WAIT_MS = 4500
+
+export type UpdateCheckResult =
+  | { status: 'update-available' }
+  | { status: 'up-to-date' }
+  | { status: 'unavailable' }
+  | { status: 'error' }
+
+type UpdateCheckOptions = {
+  revealModal?: boolean
+}
 
 type UseAppUpdateOptions = {
   onRouteAfterUpdate?: () => void
@@ -45,6 +56,33 @@ function getPendingUpdateToken(version?: string) {
   return version?.trim() || APP_VERSION
 }
 
+function waitForInstallingUpdate(registration: ServiceWorkerRegistration) {
+  const installingWorker = registration.installing
+  if (!installingWorker) return Promise.resolve(false)
+
+  if (installingWorker.state === 'installed') {
+    return Promise.resolve(Boolean(registration.waiting))
+  }
+
+  return new Promise<boolean>((resolve) => {
+    let settled = false
+    const finish = (available: boolean) => {
+      if (settled) return
+      settled = true
+      window.clearTimeout(timeoutId)
+      installingWorker.removeEventListener('statechange', onStateChange)
+      resolve(available)
+    }
+    const onStateChange = () => {
+      if (installingWorker.state === 'installed') finish(Boolean(registration.waiting))
+      if (installingWorker.state === 'redundant') finish(false)
+    }
+    const timeoutId = window.setTimeout(() => finish(Boolean(registration.waiting)), UPDATE_INSTALL_WAIT_MS)
+
+    installingWorker.addEventListener('statechange', onStateChange)
+  })
+}
+
 export function useAppUpdate(options: UseAppUpdateOptions = {}) {
   const optionsRef = useRef(options)
   const refreshingRef = useRef(false)
@@ -58,35 +96,45 @@ export function useAppUpdate(options: UseAppUpdateOptions = {}) {
     optionsRef.current = options
   }, [options])
 
-  const markUpdateAvailable = useCallback((version?: string) => {
+  const markUpdateAvailable = useCallback((version?: string, revealModal = false) => {
     const pendingToken = getPendingUpdateToken(version)
     pendingUpdateTokenRef.current = pendingToken
     setUpdateAvailable(true)
     setShowUpdateModal(
-      readStorage(window.sessionStorage, SESSION_UPDATE_DISMISSED_VERSION_KEY) !== pendingToken,
+      revealModal ||
+        readStorage(window.sessionStorage, SESSION_UPDATE_DISMISSED_VERSION_KEY) !== pendingToken,
     )
   }, [])
 
-  const checkForUpdate = useCallback(async () => {
-    if (!('serviceWorker' in navigator)) return
+  const checkForUpdate = useCallback(async (checkOptions: UpdateCheckOptions = {}): Promise<UpdateCheckResult> => {
+    if (!('serviceWorker' in navigator)) return { status: 'unavailable' }
 
     try {
       const registration =
         window.wafytndeServiceWorkerRegistration ?? (await navigator.serviceWorker.getRegistration())
 
-      if (!registration) return
+      if (!registration) return { status: 'unavailable' }
       if (registration.waiting) {
-        markUpdateAvailable()
-        return
+        markUpdateAvailable(undefined, checkOptions.revealModal)
+        return { status: 'update-available' }
       }
 
       await registration.update()
 
       if (registration.waiting) {
-        markUpdateAvailable()
+        markUpdateAvailable(undefined, checkOptions.revealModal)
+        return { status: 'update-available' }
       }
+
+      if (await waitForInstallingUpdate(registration)) {
+        markUpdateAvailable(undefined, checkOptions.revealModal)
+        return { status: 'update-available' }
+      }
+
+      return { status: 'up-to-date' }
     } catch {
       // Offline and flaky networks are normal for this app; the next scheduled check can try again.
+      return { status: 'error' }
     }
   }, [markUpdateAvailable])
 
