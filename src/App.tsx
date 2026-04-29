@@ -2013,7 +2013,7 @@ function TrashPanel(props: {
     <div className="panel-stack">
       <PanelHeader
         eyebrow="Trash"
-        title="Restore if you changed your mind"
+        title="Restore or erase"
         actions={
           records.length > 0 && (
             <button type="button" className="danger-button" onClick={props.onEmpty}>
