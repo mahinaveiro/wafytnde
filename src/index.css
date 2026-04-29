@@ -311,22 +311,100 @@ time {
 .sidebar-bundles {
   grid-row: 3;
   min-height: 0;
+  display: grid;
   overflow: auto;
   border-top: 1px solid var(--line-soft);
   padding-top: 10px;
 }
 
-.sidebar-heading {
+.sidebar-heading,
+.pinned-switcher-header > span {
   color: var(--muted);
   font-size: 0.72rem;
   font-weight: 800;
   text-transform: uppercase;
 }
 
-.sidebar-bundles p {
+.pinned-switcher {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 7px;
+}
+
+.pinned-switcher-header {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.pinned-switcher-header > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pinned-switcher-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.pinned-switcher-controls button {
+  width: 26px;
+  min-width: 26px;
+  min-height: 24px;
+  justify-content: center;
+  padding: 2px;
+  background: var(--paper);
+  border-color: var(--line);
+  box-shadow: none;
+}
+
+.pinned-switcher-list {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  align-content: start;
+  gap: 5px;
+  overflow: auto;
+}
+
+.pinned-switcher-list p {
   color: var(--muted);
   font-size: 0.84rem;
   padding: 8px 4px;
+}
+
+.pinned-item {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 7px;
+}
+
+.pinned-item span:last-child {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.pinned-item strong,
+.pinned-item small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pinned-item small {
+  color: var(--muted);
 }
 
 .sidebar-footer {
@@ -443,6 +521,41 @@ time {
 
 .danger-button {
   background: #e9c2b5;
+  border-color: var(--red);
+}
+
+.icon-button {
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  min-height: 34px;
+  flex: 0 0 34px;
+  padding: 4px;
+}
+
+.icon-action-row {
+  align-items: center;
+}
+
+.pin-toggle-button {
+  color: var(--muted);
+  background: var(--paper);
+  border-color: var(--line-soft);
+  box-shadow: none;
+}
+
+.pin-toggle-button.active {
+  color: #1d130c;
+  background: var(--yellow);
+  border-color: var(--line);
+  box-shadow: 2px 2px 0 rgba(46, 36, 26, 0.2);
+}
+
+.pin-toggle-button.active svg {
+  stroke-width: 2.8;
+}
+
+.danger-icon-button {
   border-color: var(--red);
 }
 
@@ -1658,6 +1771,87 @@ kbd {
   padding: 14px;
 }
 
+.mobile-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  display: none;
+  background: rgba(36, 27, 20, 0.28);
+  backdrop-filter: blur(2px);
+  overflow: hidden;
+}
+
+.mobile-drawer {
+  width: min(80vw, 360px);
+  max-width: calc(100vw - 24px);
+  height: 100dvh;
+  max-height: 100dvh;
+  min-width: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  background:
+    linear-gradient(var(--wafy-panel-tint, transparent), var(--wafy-panel-tint, transparent)),
+    var(--paper);
+  border: 2px solid var(--line);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.mobile-drawer-left {
+  border-left: 0;
+}
+
+.mobile-drawer-right {
+  margin-left: auto;
+  border-right: 0;
+}
+
+.mobile-drawer-titlebar {
+  min-width: 0;
+}
+
+.mobile-drawer-close {
+  flex: 0 0 18px;
+}
+
+.mobile-drawer-body {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 10px;
+}
+
+.pinned-switcher-panel {
+  height: 100%;
+}
+
+.pinned-switcher-panel .pinned-switcher-list {
+  gap: 8px;
+}
+
+.pinned-switcher-panel .pinned-item {
+  width: 100%;
+  min-height: 54px;
+  justify-content: stretch;
+  justify-items: start;
+  text-align: left;
+  background: var(--paper-2);
+  border-color: var(--line);
+  box-shadow: none;
+}
+
+.mobile-command-menu {
+  display: grid;
+  gap: 12px;
+}
+
+.mobile-command-list button {
+  justify-content: flex-start;
+  width: 100%;
+  min-height: 44px;
+  text-align: left;
+}
+
 .quick-capture-form {
   display: grid;
   gap: 12px;
@@ -1917,6 +2111,35 @@ kbd {
   }
 }
 
+@keyframes pinned-category-in {
+  from {
+    opacity: 0;
+    transform: translateX(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes drawer-left-in {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes drawer-right-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
 @media (prefers-reduced-motion: no-preference) {
   button,
   .app-root,
@@ -1935,6 +2158,18 @@ kbd {
 
   .whats-new-card {
     animation: whats-new-in 180ms ease-out;
+  }
+
+  .pinned-switcher-list {
+    animation: pinned-category-in 150ms ease-out;
+  }
+
+  .mobile-drawer-left {
+    animation: drawer-left-in 180ms ease-out;
+  }
+
+  .mobile-drawer-right {
+    animation: drawer-right-in 180ms ease-out;
   }
 }
 
@@ -2038,6 +2273,18 @@ kbd {
   border-color: rgba(184, 106, 47, 0.65);
 }
 
+:root[data-theme="terminal"] .pin-toggle-button {
+  color: #b7b09f;
+  background: #24221d;
+  border-color: #3a372f;
+}
+
+:root[data-theme="terminal"] .pin-toggle-button.active {
+  color: #f4eadb;
+  background: rgba(201, 162, 74, 0.24);
+  border-color: rgba(201, 162, 74, 0.5);
+}
+
 :root[data-theme="terminal"] .system-button,
 :root[data-theme="terminal"] .offline-badge,
 :root[data-theme="terminal"] .status-chip {
@@ -2072,7 +2319,8 @@ kbd {
 :root[data-theme="terminal"] .panel-header,
 :root[data-theme="terminal"] .window-panel,
 :root[data-theme="terminal"] .inspector,
-:root[data-theme="terminal"] .modal-window {
+:root[data-theme="terminal"] .modal-window,
+:root[data-theme="terminal"] .mobile-drawer {
   background:
     linear-gradient(var(--wafy-panel-tint, transparent), var(--wafy-panel-tint, transparent)),
     #24221d;
@@ -2106,7 +2354,8 @@ kbd {
 :root[data-theme="terminal"] .status-grid,
 :root[data-theme="terminal"] .shortcut-grid,
 :root[data-theme="terminal"] .manual-grid,
-:root[data-theme="terminal"] .note-picker-list {
+:root[data-theme="terminal"] .note-picker-list,
+:root[data-theme="terminal"] .pinned-switcher-panel .pinned-item {
   background: #323029;
   border-color: #3a372f;
   box-shadow: none;
@@ -2290,6 +2539,7 @@ kbd {
     z-index: 12;
     display: flex;
     align-items: center;
+    gap: 8px;
     min-height: 58px;
     padding: 8px 10px;
     background: var(--wafy-topbar-bg, var(--yellow));
@@ -2305,6 +2555,16 @@ kbd {
     background: transparent;
     box-shadow: none;
     -webkit-tap-highlight-color: transparent;
+  }
+
+  .mobile-brand-button {
+    flex: 0 0 auto;
+  }
+
+  .mobile-header-action {
+    flex: 1 1 auto;
+    align-self: stretch;
+    min-width: 44px;
   }
 
   .mobile-header button:active {
@@ -2346,6 +2606,10 @@ kbd {
     font-family: var(--serif);
     font-size: 1.2rem;
     font-weight: 800;
+  }
+
+  .mobile-drawer-backdrop {
+    display: block;
   }
 
   .pane-grid {
@@ -2655,6 +2919,12 @@ kbd {
 
   .button-row button {
     flex: 1 1 auto;
+  }
+
+  .button-row button.icon-button {
+    width: 34px;
+    min-width: 34px;
+    flex: 0 0 34px;
   }
 
   .todo-editor-actions button {

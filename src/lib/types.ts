@@ -40,7 +40,6 @@ export interface Bundle extends BaseRecord {
   color: string
   visualMarker: string
   pinned: boolean
-  favorite: boolean
 }
 
 export interface Project extends BaseRecord {
@@ -60,7 +59,6 @@ export interface Note extends BaseRecord {
   title: string
   body: string
   tags: string[]
-  favorite: boolean
   pinned: boolean
   lastSavedAt?: string
 }

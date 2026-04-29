@@ -7,6 +7,7 @@ import {
   CheckSquare,
   ChevronDown,
   ChevronLeft,
+  ChevronRight,
   Command,
   Database,
   Download,
@@ -30,7 +31,6 @@ import {
   Search,
   Settings,
   SlidersHorizontal,
-  Star,
   Trash2,
   Upload,
   WifiOff,
@@ -169,6 +169,20 @@ type AppearanceDraft = {
 }
 
 type ThemeAppearanceDefaults = Omit<AppearanceDraft, 'panelTintColor'>
+type PinnedCategory = 'bundles' | 'notes' | 'projects'
+
+const pinnedCategories: PinnedCategory[] = ['bundles', 'notes', 'projects']
+const pinnedCategoryLabels: Record<PinnedCategory, string> = {
+  bundles: 'Pinned bundles',
+  notes: 'Pinned notes',
+  projects: 'Pinned projects',
+}
+
+const pinnedCategoryEmptyLabels: Record<PinnedCategory, string> = {
+  bundles: 'No pinned bundles.',
+  notes: 'No pinned notes.',
+  projects: 'No pinned projects.',
+}
 
 const emptyData: LoadedData = {
   bundles: [],
@@ -256,6 +270,20 @@ const userManualSections: Array<{
     title: 'Organization system',
     body: 'Wafytnde uses a small hierarchy so loose writing and structured work can live together.',
     items: ['Bundles are top-level shelves.', 'Projects live inside bundles.', 'Notes can belong to a bundle or a project.'],
+  },
+  {
+    title: 'Pinned items',
+    body: 'Pin bundles, notes, or projects to reach them quickly from the sidebar or the mobile pinned panel.',
+    items: ['Active pin buttons are highlighted.', 'Desktop sidebar controls cycle through pinned bundles, notes, and projects.'],
+  },
+  {
+    title: 'Mobile Desk shortcuts',
+    body: 'Desk has two phone-only top bar gestures.',
+    items: [
+      'Tap the W logo on Desk to open pinned bundles, notes, and projects.',
+      'Tap the top bar area on Desk to open quick actions.',
+      'These gestures only work on Desk. From other pages, the top bar returns you to Desk.',
+    ],
   },
   {
     title: 'Inbox / Capture',
@@ -491,6 +519,8 @@ function App() {
   )
   const [quickCaptureOpen, setQuickCaptureOpen] = useState(false)
   const [commandOpen, setCommandOpen] = useState(false)
+  const [mobilePinnedOpen, setMobilePinnedOpen] = useState(false)
+  const [mobileCommandOpen, setMobileCommandOpen] = useState(false)
   const [confirmState, setConfirmState] = useState<ConfirmState | null>(null)
   const [updateCheckNotice, setUpdateCheckNotice] = useState<UpdateCheckNotice | null>(null)
   const [toasts, setToasts] = useState<Toast[]>([])
@@ -504,6 +534,7 @@ function App() {
   const [importState, setImportState] = useState<ImportState>({ busy: false })
   const toastIdRef = useRef(0)
   const paneGridRef = useRef<HTMLDivElement | null>(null)
+  const mobileDrawerOpen = mobilePinnedOpen || mobileCommandOpen
   const appUpdate = useAppUpdate({
     onRouteAfterUpdate: () => navigate('dashboard'),
     onOpenChangelog: () => {
@@ -552,6 +583,26 @@ function App() {
   }, [settings])
 
   useEffect(() => {
+    if (!mobileDrawerOpen) return
+
+    const previousOverflow = document.body.style.overflow
+    const closeIfDesktop = () => {
+      if (!isMobileLayout()) {
+        setMobilePinnedOpen(false)
+        setMobileCommandOpen(false)
+      }
+    }
+
+    document.body.style.overflow = 'hidden'
+    window.addEventListener('resize', closeIfDesktop)
+    closeIfDesktop()
+    return () => {
+      document.body.style.overflow = previousOverflow
+      window.removeEventListener('resize', closeIfDesktop)
+    }
+  }, [mobileDrawerOpen])
+
+  useEffect(() => {
     const onOnline = () => setOnline(true)
     const onOffline = () => setOnline(false)
     const onOfflineReady = () => {
@@ -597,6 +648,8 @@ function App() {
       }
       if (event.key === 'Escape') {
         setCommandOpen(false)
+        setMobilePinnedOpen(false)
+        setMobileCommandOpen(false)
         setQuickCaptureOpen(false)
       }
       if (event.key === 'Delete' && selectedNote && !isTypingTarget(event.target)) {
@@ -970,6 +1023,7 @@ function App() {
 
   function runCommand(command: string) {
     setCommandOpen(false)
+    setMobileCommandOpen(false)
     if (command === 'new-note') void handleCreateNote()
     if (command === 'new-bundle') void handleCreateBundle()
     if (command === 'new-project') void handleCreateProject()
@@ -984,8 +1038,37 @@ function App() {
       patchAppSettings({ theme: settings.theme === 'terminal' ? 'warm' : 'terminal' })
     }
     if (command === 'inbox') navigate('inbox')
+    if (command === 'bundles') navigate('bundles')
+    if (command === 'archive') navigate('archive')
+    if (command === 'trash') navigate('trash')
     if (command === 'settings') navigate('settings')
     if (command === 'search') navigate('search')
+  }
+
+  function openMobilePinnedDrawer() {
+    setMobileCommandOpen(false)
+    setMobilePinnedOpen(true)
+  }
+
+  function openMobileCommandDrawer() {
+    setMobilePinnedOpen(false)
+    setMobileCommandOpen(true)
+  }
+
+  function handleMobileBrandPress() {
+    if (view === 'dashboard' && isMobileLayout()) {
+      openMobilePinnedDrawer()
+      return
+    }
+    navigate('dashboard')
+  }
+
+  function handleMobileTopbarPress() {
+    if (view === 'dashboard' && isMobileLayout()) {
+      openMobileCommandDrawer()
+      return
+    }
+    navigate('dashboard')
   }
 
   function viewWhatsNewInSettings() {
@@ -1077,6 +1160,7 @@ function App() {
           notes={activeNotes}
           onOpen={openBundle}
           onCreate={handleCreateBundle}
+          onTogglePin={(bundle) => void updateBundle(bundle.id, { pinned: !bundle.pinned })}
           onArchive={(bundle) => askArchive('bundle', bundle.id, bundle.title)}
           onDelete={(bundle) => askDelete('bundle', bundle.id, bundle.title)}
         />
@@ -1093,6 +1177,11 @@ function App() {
           activeTodoLists={activeTodoLists}
           todoItems={data.todoItems}
           onTab={setBundleTab}
+          onBack={() => {
+            setSelectedProjectId(undefined)
+            setSelectedNoteId(undefined)
+            navigate('bundles')
+          }}
           onOpenNote={openNote}
           onOpenProject={openProject}
           onCreateNote={(title) => handleCreateNote({ bundleId: selectedBundle.id, title })}
@@ -1286,6 +1375,7 @@ function App() {
   const paneStyle = { '--middle-pane-size': `${paneSplit * 100}%` } as CSSProperties
   const modalOpen =
     !settings.onboardingComplete ||
+    mobileDrawerOpen ||
     quickCaptureOpen ||
     commandOpen ||
     Boolean(confirmState) ||
@@ -1317,16 +1407,24 @@ function App() {
         activeView={view}
         collapsed={settings.sidebarCollapsed}
         bundles={activeBundles}
+        notes={activeNotes}
+        projects={activeProjects}
         inboxCount={activeCaptures.length}
         storageUsage={storage.usage}
         online={online}
         onNavigate={navigate}
         onOpenBundle={openBundle}
+        onOpenNote={openNote}
+        onOpenProject={openProject}
         onToggleCollapse={() => patchAppSettings({ sidebarCollapsed: !settings.sidebarCollapsed })}
       />
 
       <section className="workspace-shell">
-        <MobileHeader onNavigateDesk={() => navigate('dashboard')} />
+        <MobileHeader
+          view={view}
+          onBrandPress={handleMobileBrandPress}
+          onTopbarPress={handleMobileTopbarPress}
+        />
         <Topbar
           view={view}
           searchQuery={searchQuery}
@@ -1367,6 +1465,32 @@ function App() {
         >
           <Plus size={22} />
         </button>
+      )}
+      {mobilePinnedOpen && (
+        <MobilePinnedDrawer
+          bundles={activeBundles}
+          notes={activeNotes}
+          projects={activeProjects}
+          onClose={() => setMobilePinnedOpen(false)}
+          onOpenBundle={(bundle) => {
+            setMobilePinnedOpen(false)
+            openBundle(bundle)
+          }}
+          onOpenNote={(note) => {
+            setMobilePinnedOpen(false)
+            openNote(note)
+          }}
+          onOpenProject={(project) => {
+            setMobilePinnedOpen(false)
+            openProject(project)
+          }}
+        />
+      )}
+      {mobileCommandOpen && (
+        <MobileCommandDrawer
+          onClose={() => setMobileCommandOpen(false)}
+          onRun={runCommand}
+        />
       )}
 
       {quickCaptureOpen && (
@@ -1432,18 +1556,104 @@ function collectRecords(
   ].filter(predicate)
 }
 
+function cyclePinnedCategory(category: PinnedCategory, direction: 1 | -1) {
+  const currentIndex = pinnedCategories.indexOf(category)
+  const nextIndex = (currentIndex + direction + pinnedCategories.length) % pinnedCategories.length
+  return pinnedCategories[nextIndex]
+}
+
+function PinnedContentSwitcher(props: {
+  bundles: Bundle[]
+  notes: Note[]
+  projects: Project[]
+  mode: 'compact' | 'panel'
+  onOpenBundle: (bundle: Bundle) => void
+  onOpenNote: (note: Note) => void
+  onOpenProject: (project: Project) => void
+}) {
+  const [category, setCategory] = useState<PinnedCategory>('bundles')
+  const pinnedBundles = props.bundles.filter((bundle) => bundle.pinned)
+  const pinnedNotes = props.notes.filter((note) => note.pinned)
+  const pinnedProjects = props.projects.filter((project) => project.pinned)
+  const emptyLabel = props.mode === 'panel' ? pinnedCategoryEmptyLabels[category] : 'Nothing here yet.'
+
+  return (
+    <div className={clsx('pinned-switcher', `pinned-switcher-${props.mode}`)}>
+      <div className="pinned-switcher-header">
+        <span>{pinnedCategoryLabels[category]}</span>
+        <div className="pinned-switcher-controls">
+          <button
+            type="button"
+            aria-label="Previous pinned category"
+            title="Previous pinned category"
+            onClick={() => setCategory((current) => cyclePinnedCategory(current, -1))}
+          >
+            <ChevronLeft size={13} />
+          </button>
+          <button
+            type="button"
+            aria-label="Next pinned category"
+            title="Next pinned category"
+            onClick={() => setCategory((current) => cyclePinnedCategory(current, 1))}
+          >
+            <ChevronRight size={13} />
+          </button>
+        </div>
+      </div>
+      <div key={category} className="pinned-switcher-list">
+        {category === 'bundles' &&
+          pinnedBundles.slice(0, props.mode === 'panel' ? 24 : 8).map((bundle) => (
+            <button key={bundle.id} type="button" className="pinned-item" onClick={() => props.onOpenBundle(bundle)}>
+              <span className="color-dot" style={{ background: bundle.color }} />
+              <span>
+                <strong>{bundle.title}</strong>
+                <small>{oneLine(bundle.description, 'No description.')}</small>
+              </span>
+            </button>
+          ))}
+        {category === 'notes' &&
+          pinnedNotes.slice(0, props.mode === 'panel' ? 24 : 8).map((note) => (
+            <button key={note.id} type="button" className="pinned-item" onClick={() => props.onOpenNote(note)}>
+              <Pin size={12} />
+              <span>
+                <strong>{note.title}</strong>
+                <small>{oneLine(note.body, 'No body text yet.')}</small>
+              </span>
+            </button>
+          ))}
+        {category === 'projects' &&
+          pinnedProjects.slice(0, props.mode === 'panel' ? 24 : 8).map((project) => (
+            <button key={project.id} type="button" className="pinned-item" onClick={() => props.onOpenProject(project)}>
+              <span className="color-dot" style={{ background: project.color }} />
+              <span>
+                <strong>{project.title}</strong>
+                <small>{project.status}</small>
+              </span>
+            </button>
+          ))}
+        {((category === 'bundles' && pinnedBundles.length === 0) ||
+          (category === 'notes' && pinnedNotes.length === 0) ||
+          (category === 'projects' && pinnedProjects.length === 0)) && <p>{emptyLabel}</p>}
+      </div>
+    </div>
+  )
+}
+
 function Sidebar(props: {
   activeView: ViewKey
   collapsed: boolean
   bundles: Bundle[]
+  notes: Note[]
+  projects: Project[]
   inboxCount: number
   storageUsage?: number
   online: boolean
   onNavigate: (view: ViewKey) => void
   onOpenBundle: (bundle: Bundle) => void
+  onOpenNote: (note: Note) => void
+  onOpenProject: (project: Project) => void
   onToggleCollapse: () => void
 }) {
-  const pinnedBundles = props.bundles.filter((bundle) => bundle.pinned)
   return (
     <aside className="sidebar">
       <div className="app-mark">
@@ -1477,14 +1687,15 @@ function Sidebar(props: {
       </nav>
       {!props.collapsed && (
         <div className="sidebar-bundles">
-          <div className="sidebar-heading">Pinned bundles</div>
-          {pinnedBundles.slice(0, 6).map((bundle) => (
-            <button key={bundle.id} type="button" onClick={() => props.onOpenBundle(bundle)}>
-              <span className="color-dot" style={{ background: bundle.color }} />
-              <span>{bundle.title}</span>
-            </button>
-          ))}
-          {pinnedBundles.length === 0 && <p>Nothing pinned yet.</p>}
+          <PinnedContentSwitcher
+            mode="compact"
+            bundles={props.bundles}
+            notes={props.notes}
+            projects={props.projects}
+            onOpenBundle={props.onOpenBundle}
+            onOpenNote={props.onOpenNote}
+            onOpenProject={props.onOpenProject}
+          />
         </div>
       )}
       <div className="sidebar-footer">
@@ -1501,10 +1712,21 @@ function Sidebar(props: {
   )
 }
 
-function MobileHeader(props: { onNavigateDesk: () => void }) {
+function MobileHeader(props: {
+  view: ViewKey
+  onBrandPress: () => void
+  onTopbarPress: () => void
+}) {
+  const onDesk = props.view === 'dashboard'
   return (
     <header className="mobile-header">
-      <button type="button" onClick={props.onNavigateDesk} aria-label="Go to Desk">
+      <button
+        type="button"
+        className="mobile-brand-button"
+        onClick={props.onBrandPress}
+        aria-label={onDesk ? 'Open pinned content' : 'Go to Desk'}
+        title={onDesk ? 'Open pinned content' : 'Go to Desk'}
+      >
         <span className="mobile-stamp" aria-hidden="true">
           W
         </span>
@@ -1513,6 +1735,13 @@ function MobileHeader(props: { onNavigateDesk: () => void }) {
           <small>My Library</small>
         </span>
       </button>
+      <button
+        type="button"
+        className="mobile-header-action"
+        onClick={props.onTopbarPress}
+        aria-label={onDesk ? 'Open quick actions' : 'Go to Desk'}
+        title={onDesk ? 'Open quick actions' : 'Go to Desk'}
+      />
     </header>
   )
 }
@@ -1782,6 +2011,7 @@ function BundlesPanel(props: {
   notes: Note[]
   onOpen: (bundle: Bundle) => void
   onCreate: (title?: string) => Promise<void>
+  onTogglePin: (bundle: Bundle) => void
   onArchive: (bundle: Bundle) => void
   onDelete: (bundle: Bundle) => void
 }) {
@@ -1817,15 +2047,14 @@ function BundlesPanel(props: {
                   {projectCount} projects · {noteCount} notes
                 </small>
               </button>
-              <div className="button-row">
-                <button type="button" onClick={() => props.onArchive(bundle)}>
-                  <Archive size={14} />
-                  Archive
-                </button>
-                <button type="button" onClick={() => props.onDelete(bundle)}>
-                  <Trash2 size={14} />
-                  Trash
-                </button>
+              <div className="button-row icon-action-row">
+                <PinToggleButton
+                  active={bundle.pinned}
+                  label="bundle"
+                  onToggle={() => props.onTogglePin(bundle)}
+                />
+                <ArchiveIconButton label="bundle" onClick={() => props.onArchive(bundle)} />
+                <TrashIconButton label="bundle" onClick={() => props.onDelete(bundle)} />
               </div>
             </article>
           )
@@ -1847,6 +2076,7 @@ function BundlePanel(props: {
   activeTodoLists: TodoList[]
   todoItems: TodoItem[]
   onTab: (tab: 'overview' | 'notes' | 'projects' | 'todos' | 'archive') => void
+  onBack: () => void
   onOpenNote: (note: Note) => void
   onOpenProject: (project: Project) => void
   onCreateNote: (title?: string) => Promise<void>
@@ -1880,6 +2110,10 @@ function BundlePanel(props: {
   const todoKey = todoSectionKey('bundle', props.bundle.id)
   return (
     <div className="panel-stack">
+      <button type="button" className="back-button" onClick={props.onBack}>
+        <ChevronLeft size={15} />
+        Bundles
+      </button>
       <PanelHeader eyebrow="Bundle" title={props.bundle.title} sub={props.bundle.description || 'No description.'} />
       <div className="tab-strip" role="tablist" aria-label="Bundle tabs">
         {(['overview', 'notes', 'projects', 'todos', 'archive'] as const).map((tab) => (
@@ -2728,6 +2962,70 @@ function UserManualPanel() {
   )
 }
 
+function PinToggleButton(props: {
+  active: boolean
+  label: string
+  onToggle: () => void
+}) {
+  const action = props.active ? 'Unpin' : 'Pin'
+  return (
+    <button
+      type="button"
+      className={clsx('icon-button', 'pin-toggle-button', props.active && 'active')}
+      aria-label={`${action} ${props.label}`}
+      aria-pressed={props.active}
+      title={`${action} ${props.label}`}
+      onClick={props.onToggle}
+    >
+      <Pin size={14} fill={props.active ? 'currentColor' : 'none'} />
+    </button>
+  )
+}
+
+function ArchiveIconButton(props: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      className="icon-button"
+      aria-label={`Archive ${props.label}`}
+      title={`Archive ${props.label}`}
+      onClick={props.onClick}
+    >
+      <Archive size={14} />
+    </button>
+  )
+}
+
+function TrashIconButton(props: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      className="icon-button danger-icon-button"
+      aria-label={`Trash ${props.label}`}
+      title={`Trash ${props.label}`}
+      onClick={props.onClick}
+    >
+      <Trash2 size={14} />
+    </button>
+  )
+}
+
+function RecordActionRow(props: {
+  pinned: boolean
+  label: string
+  onTogglePin: () => void
+  onArchive: () => void
+  onDelete: () => void
+}) {
+  return (
+    <div className="button-row icon-action-row">
+      <PinToggleButton active={props.pinned} label={props.label} onToggle={props.onTogglePin} />
+      <ArchiveIconButton label={props.label} onClick={props.onArchive} />
+      <TrashIconButton label={props.label} onClick={props.onDelete} />
+    </div>
+  )
+}
+
 function NoteEditor(props: {
   note: Note
   bundles: Bundle[]
@@ -2873,6 +3171,7 @@ function NoteEditor(props: {
       <div className="button-row editor-actions">
         <button
           type="button"
+          className="icon-button"
           aria-label="Save now"
           title="Save now"
           onClick={() => {
@@ -2882,31 +3181,22 @@ function NoteEditor(props: {
         >
           <Save size={14} />
         </button>
+        <PinToggleButton
+          active={props.note.pinned}
+          label="note"
+          onToggle={() => void props.onSave({ pinned: !props.note.pinned })}
+        />
         <button
           type="button"
-          aria-label={props.note.pinned ? 'Unpin note' : 'Pin note'}
-          title={props.note.pinned ? 'Unpin note' : 'Pin note'}
-          onClick={() => void props.onSave({ pinned: !props.note.pinned })}
+          className="icon-button"
+          aria-label="New todo list"
+          title="New todo list"
+          onClick={() => void props.onCreateTodoList()}
         >
-          <Pin size={14} />
-        </button>
-        <button
-          type="button"
-          aria-label={props.note.favorite ? 'Unfavorite note' : 'Favorite note'}
-          title={props.note.favorite ? 'Unfavorite note' : 'Favorite note'}
-          onClick={() => void props.onSave({ favorite: !props.note.favorite })}
-        >
-          <Star size={14} />
-        </button>
-        <button type="button" aria-label="New todo list" title="New todo list" onClick={() => void props.onCreateTodoList()}>
           <ListTodo size={14} />
         </button>
-        <button type="button" aria-label="Archive note" title="Archive note" onClick={props.onArchive}>
-          <Archive size={14} />
-        </button>
-        <button type="button" aria-label="Trash note" title="Trash note" onClick={props.onDelete}>
-          <Trash2 size={14} />
-        </button>
+        <ArchiveIconButton label="note" onClick={props.onArchive} />
+        <TrashIconButton label="note" onClick={props.onDelete} />
       </div>
       <TodoSection
         sectionKey={todoKey}
@@ -3011,32 +3301,13 @@ function BundleInspector(props: {
         />
       </label>
       <BundleColorField value={props.bundle.color} onSave={(color) => props.onSave({ color })} />
-      <label className="check-row">
-        <input
-          type="checkbox"
-          checked={props.bundle.pinned}
-          onChange={(event) => void props.onSave({ pinned: event.target.checked })}
-        />
-        <span>Pinned</span>
-      </label>
-      <label className="check-row">
-        <input
-          type="checkbox"
-          checked={props.bundle.favorite}
-          onChange={(event) => void props.onSave({ favorite: event.target.checked })}
-        />
-        <span>Favorite</span>
-      </label>
-      <div className="button-row">
-        <button type="button" onClick={props.onArchive}>
-          <Archive size={14} />
-          Archive
-        </button>
-        <button type="button" onClick={props.onDelete}>
-          <Trash2 size={14} />
-          Trash
-        </button>
-      </div>
+      <RecordActionRow
+        pinned={props.bundle.pinned}
+        label="bundle"
+        onTogglePin={() => void props.onSave({ pinned: !props.bundle.pinned })}
+        onArchive={props.onArchive}
+        onDelete={props.onDelete}
+      />
     </Inspector>
   )
 }
@@ -3070,24 +3341,13 @@ function ProjectInspector(props: {
           <option value="archived">archived</option>
         </select>
       </label>
-      <label className="check-row">
-        <input
-          type="checkbox"
-          checked={props.project.pinned}
-          onChange={(event) => void props.onSave({ pinned: event.target.checked })}
-        />
-        <span>Pinned</span>
-      </label>
-      <div className="button-row">
-        <button type="button" onClick={props.onArchive}>
-          <Archive size={14} />
-          Archive
-        </button>
-        <button type="button" onClick={props.onDelete}>
-          <Trash2 size={14} />
-          Trash
-        </button>
-      </div>
+      <RecordActionRow
+        pinned={props.project.pinned}
+        label="project"
+        onTogglePin={() => void props.onSave({ pinned: !props.project.pinned })}
+        onArchive={props.onArchive}
+        onDelete={props.onDelete}
+      />
     </Inspector>
   )
 }
@@ -3113,32 +3373,13 @@ function BundleEditCard(props: {
           />
         </label>
         <BundleColorField value={props.bundle.color} onSave={(color) => props.onSave({ color })} />
-        <label className="check-row">
-          <input
-            type="checkbox"
-            checked={props.bundle.pinned}
-            onChange={(event) => void props.onSave({ pinned: event.target.checked })}
-          />
-          <span>Pinned</span>
-        </label>
-        <label className="check-row">
-          <input
-            type="checkbox"
-            checked={props.bundle.favorite}
-            onChange={(event) => void props.onSave({ favorite: event.target.checked })}
-          />
-          <span>Favorite</span>
-        </label>
-        <div className="button-row">
-          <button type="button" onClick={props.onArchive}>
-            <Archive size={14} />
-            Archive
-          </button>
-          <button type="button" onClick={props.onDelete}>
-            <Trash2 size={14} />
-            Trash
-          </button>
-        </div>
+        <RecordActionRow
+          pinned={props.bundle.pinned}
+          label="bundle"
+          onTogglePin={() => void props.onSave({ pinned: !props.bundle.pinned })}
+          onArchive={props.onArchive}
+          onDelete={props.onDelete}
+        />
       </div>
     </CollapsibleSection>
   )
@@ -3174,24 +3415,13 @@ function ProjectEditCard(props: {
             <option value="archived">archived</option>
           </select>
         </label>
-        <label className="check-row">
-          <input
-            type="checkbox"
-            checked={props.project.pinned}
-            onChange={(event) => void props.onSave({ pinned: event.target.checked })}
-          />
-          <span>Pinned</span>
-        </label>
-        <div className="button-row">
-          <button type="button" onClick={props.onArchive}>
-            <Archive size={14} />
-            Archive
-          </button>
-          <button type="button" onClick={props.onDelete}>
-            <Trash2 size={14} />
-            Trash
-          </button>
-        </div>
+        <RecordActionRow
+          pinned={props.project.pinned}
+          label="project"
+          onTogglePin={() => void props.onSave({ pinned: !props.project.pinned })}
+          onArchive={props.onArchive}
+          onDelete={props.onDelete}
+        />
       </div>
     </CollapsibleSection>
   )
@@ -3461,6 +3691,172 @@ function TodoListCard(props: {
         </div>
       )}
     </article>
+  )
+}
+
+const drawerFocusableSelector =
+  'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+
+function MobileDrawer(props: {
+  side: 'left' | 'right'
+  title: string
+  children: ReactNode
+  onClose: () => void
+}) {
+  const panelRef = useRef<HTMLElement | null>(null)
+  const restoreFocusRef = useRef<HTMLElement | null>(null)
+
+  useEffect(() => {
+    restoreFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const panel = panelRef.current
+    const preferredFocus =
+      panel?.querySelector<HTMLElement>('[data-autofocus="true"]') ??
+      panel?.querySelector<HTMLElement>(drawerFocusableSelector)
+    window.setTimeout(() => preferredFocus?.focus({ preventScroll: true }), 0)
+
+    return () => {
+      restoreFocusRef.current?.focus({ preventScroll: true })
+    }
+  }, [])
+
+  function focusableElements() {
+    const panel = panelRef.current
+    if (!panel) return []
+    return Array.from(panel.querySelectorAll<HTMLElement>(drawerFocusableSelector)).filter(
+      (element) =>
+        !element.hasAttribute('disabled') &&
+        element.getAttribute('aria-hidden') !== 'true' &&
+        element.tabIndex !== -1,
+    )
+  }
+
+  function handleKeys(event: KeyboardEvent<HTMLElement>) {
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      props.onClose()
+      return
+    }
+    if (event.key !== 'Tab') return
+
+    const focusable = focusableElements()
+    if (focusable.length === 0) return
+    const first = focusable[0]
+    const last = focusable[focusable.length - 1]
+
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault()
+      last.focus()
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault()
+      first.focus()
+    }
+  }
+
+  function handleBackdrop(event: MouseEvent<HTMLDivElement>) {
+    if (event.target === event.currentTarget) props.onClose()
+  }
+
+  return (
+    <div className="mobile-drawer-backdrop" role="presentation" onMouseDown={handleBackdrop}>
+      <aside
+        ref={panelRef}
+        className={clsx('mobile-drawer', `mobile-drawer-${props.side}`)}
+        role="dialog"
+        aria-modal="true"
+        aria-label={props.title}
+        onKeyDown={handleKeys}
+      >
+        <div className="window-titlebar mobile-drawer-titlebar">
+          <span>{props.title}</span>
+          <button
+            type="button"
+            className="mac-control close mobile-drawer-close"
+            aria-label="Close"
+            title="Close"
+            onClick={props.onClose}
+          >
+            <X size={11} />
+          </button>
+        </div>
+        <div className="mobile-drawer-body">{props.children}</div>
+      </aside>
+    </div>
+  )
+}
+
+function MobilePinnedDrawer(props: {
+  bundles: Bundle[]
+  notes: Note[]
+  projects: Project[]
+  onClose: () => void
+  onOpenBundle: (bundle: Bundle) => void
+  onOpenNote: (note: Note) => void
+  onOpenProject: (project: Project) => void
+}) {
+  return (
+    <MobileDrawer side="left" title="Pinned content" onClose={props.onClose}>
+      <PinnedContentSwitcher
+        mode="panel"
+        bundles={props.bundles}
+        notes={props.notes}
+        projects={props.projects}
+        onOpenBundle={props.onOpenBundle}
+        onOpenNote={props.onOpenNote}
+        onOpenProject={props.onOpenProject}
+      />
+    </MobileDrawer>
+  )
+}
+
+function MobileCommandDrawer(props: {
+  onClose: () => void
+  onRun: (command: string) => void
+}) {
+  const [query, setQuery] = useState('')
+  const actions = [
+    { id: 'new-note', label: 'New note' },
+    { id: 'new-bundle', label: 'New bundle' },
+    { id: 'quick-capture', label: 'Capture' },
+    { id: 'export', label: 'Export' },
+    { id: 'import', label: 'Import' },
+    { id: 'inbox', label: 'Go to Inbox' },
+    { id: 'bundles', label: 'Go to Bundles' },
+    { id: 'archive', label: 'Go to Archive' },
+    { id: 'trash', label: 'Go to Trash' },
+    { id: 'settings', label: 'Go to Settings' },
+  ]
+  const filteredActions = actions.filter((action) =>
+    action.label.toLowerCase().includes(query.trim().toLowerCase()),
+  )
+
+  return (
+    <MobileDrawer side="right" title="Quick actions" onClose={props.onClose}>
+      <div className="mobile-command-menu">
+        <label className="search-page-input">
+          <Search size={18} />
+          <input
+            data-autofocus="true"
+            value={query}
+            placeholder="Search actions"
+            onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && filteredActions[0]) {
+                event.preventDefault()
+                props.onRun(filteredActions[0].id)
+              }
+            }}
+          />
+        </label>
+        <div className="command-list mobile-command-list">
+          {filteredActions.map((action) => (
+            <button key={action.id} type="button" onClick={() => props.onRun(action.id)}>
+              <span>{action.label}</span>
+            </button>
+          ))}
+          {filteredActions.length === 0 && <EmptyMini body="No matching actions." />}
+        </div>
+      </div>
+    </MobileDrawer>
   )
 }
 

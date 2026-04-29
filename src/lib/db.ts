@@ -60,6 +60,29 @@ export class WafytndeDatabase extends Dexie {
       quickCaptures:
         'id, workspaceId, title, updatedAt, archivedAt, deletedAt, order, processedAt',
     })
+    this.version(3).stores({
+      bundles:
+        'id, workspaceId, title, updatedAt, archivedAt, deletedAt, order, pinned',
+      projects:
+        'id, workspaceId, bundleId, title, status, updatedAt, archivedAt, deletedAt, order, pinned',
+      notes:
+        'id, workspaceId, bundleId, projectId, title, updatedAt, archivedAt, deletedAt, order, pinned, *tags',
+      todoLists:
+        'id, workspaceId, parentType, parentId, [parentType+parentId], updatedAt, archivedAt, deletedAt, order',
+      todoItems:
+        'id, workspaceId, todoListId, completed, updatedAt, archivedAt, deletedAt, order',
+      quickCaptures:
+        'id, workspaceId, title, updatedAt, archivedAt, deletedAt, order, processedAt',
+    }).upgrade(async (transaction) => {
+      await Promise.all([
+        transaction.table('bundles').toCollection().modify((record: { favorite?: unknown }) => {
+          delete record.favorite
+        }),
+        transaction.table('notes').toCollection().modify((record: { favorite?: unknown }) => {
+          delete record.favorite
+        }),
+      ])
+    })
   }
 }
 
@@ -114,7 +137,6 @@ export async function createBundle(title = 'Untitled bundle') {
     color: '#f0c24b',
     visualMarker: 'square',
     pinned: false,
-    favorite: false,
   }
   await db.bundles.add(bundle)
   return bundle
@@ -164,7 +186,6 @@ export async function createNote(input: {
     title: normalizeTitle(input.title ?? '', 'Untitled note'),
     body: input.body ?? '',
     tags: input.tags ?? [],
-    favorite: false,
     pinned: false,
     lastSavedAt: nowIso(),
   }

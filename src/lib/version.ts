@@ -1,11 +1,15 @@
-export const APP_VERSION = '0.2.1'
+export const APP_VERSION = '0.3.0'
 
 export const APP_RELEASE_DATE = '2026-04-30'
 
 export const APP_CHANGELOG = [
-  'Fixed mobile appearance personalization controls',
-  'Removed duplicate color swatches from personalization rows',
-  'Improved panel tint enable and no tint states',
+  'Added mobile Desk pinned content drawer',
+  'Added mobile Desk command drawer',
+  'Improved pinned item sidebar navigation',
+  'Standardized bundle and project action buttons',
+  'Removed unused favorite controls',
+  'Added bundle back navigation',
+  'Updated user manual for mobile Desk actions',
 ] as const
 
 export function formatAppReleaseDate(date = APP_RELEASE_DATE) {

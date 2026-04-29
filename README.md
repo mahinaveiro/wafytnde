@@ -43,12 +43,16 @@ The goal is simple:
 - Quick capture modal and mobile capture button.
 - Three-pane desktop layout for navigation, lists, and editing.
 - Phone-first stacked layout with bottom navigation.
+- Mobile Desk pinned content drawer for pinned bundles, notes, and projects.
+- Mobile Desk quick action drawer without keyboard shortcut clutter.
+- Desktop pinned sidebar switcher for bundles, notes, and projects.
 - Autosaving note editor with manual save.
 - Bundles with notes, projects, todos, overview, and archive tabs.
 - Project detail view with linked notes and todo lists.
 - Todo lists with active/completed filters and progress counts.
 - Global search across bundles, projects, notes, todos, tags, and captures.
 - Command menu for power-user actions.
+- Clear active pin states and icon-only bundle/project archive and trash controls.
 - Archive, restore, trash, permanent delete, and empty trash flows.
 - Settings for theme, note font, controlled appearance personalization, compact mode, reduced motion, update checks, storage status, offline status, user manual, shortcuts, and app reset.
 - Update notification flow with manual update check feedback.
@@ -215,6 +219,16 @@ User data is not stored on a server. It lives in IndexedDB on the device. Moving
 - The UI should keep its compact utility character. Avoid generic startup SaaS patterns.
 
 ## Changelog
+
+### v0.3.0 - 2026-04-30
+
+- Added mobile Desk pinned content drawer.
+- Added mobile Desk command drawer.
+- Improved pinned item sidebar navigation.
+- Standardized bundle and project action buttons.
+- Removed unused favorite controls.
+- Added bundle back navigation.
+- Updated user manual for mobile Desk actions.
 
 ### v0.2.1 — 2026-04-30
 
