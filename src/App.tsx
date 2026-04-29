@@ -3,7 +3,9 @@ import { clsx } from 'clsx'
 import {
   Archive,
   BookOpen,
+  Check,
   CheckSquare,
+  ChevronDown,
   ChevronLeft,
   Command,
   Database,
@@ -15,8 +17,11 @@ import {
   Inbox,
   LayoutDashboard,
   ListTodo,
+  Maximize2,
+  Minimize2,
   Moon,
   PanelLeftClose,
+  PanelLeftOpen,
   Pin,
   Plus,
   RefreshCw,
@@ -33,6 +38,10 @@ import {
 } from 'lucide-react'
 import {
   type ChangeEvent,
+  type CSSProperties,
+  type KeyboardEvent,
+  type MouseEvent,
+  type PointerEvent,
   type ReactNode,
   useEffect,
   useMemo,
@@ -82,6 +91,7 @@ import {
   type Bundle,
   type EntityType,
   type Note,
+  type ParentType,
   type Project,
   type QuickCapture,
   type SearchResult,
@@ -249,6 +259,10 @@ function countOpenTodos(lists: TodoList[], items: TodoItem[]) {
     .length
 }
 
+function todoSectionKey(parentType: ParentType, parentId: string) {
+  return `${parentType}:${parentId}`
+}
+
 function isTypingTarget(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) return false
   const tag = target.tagName.toLowerCase()
@@ -263,6 +277,10 @@ function App() {
   const [selectedBundleId, setSelectedBundleId] = useState<string>()
   const [selectedProjectId, setSelectedProjectId] = useState<string>()
   const [selectedNoteId, setSelectedNoteId] = useState<string>()
+  const [paneSplit, setPaneSplit] = useState(0.39)
+  const [detailFullscreen, setDetailFullscreen] = useState(false)
+  const [expandedTodoSections, setExpandedTodoSections] = useState<Set<string>>(() => new Set())
+  const [newTodoListId, setNewTodoListId] = useState<string>()
   const [searchQuery, setSearchQuery] = useState('')
   const [bundleTab, setBundleTab] = useState<'overview' | 'notes' | 'projects' | 'todos' | 'archive'>(
     'overview',
@@ -280,6 +298,7 @@ function App() {
   )
   const [importState, setImportState] = useState<ImportState>({ busy: false })
   const toastIdRef = useRef(0)
+  const paneGridRef = useRef<HTMLDivElement | null>(null)
 
   const data = useLiveQuery(async () => {
     const [bundles, projects, notes, todoLists, todoItems, quickCaptures] = await Promise.all([
@@ -392,6 +411,7 @@ function App() {
   }
 
   function navigate(nextView: ViewKey) {
+    setDetailFullscreen(false)
     setView(nextView)
     setSettings(patchSettings({ lastView: nextView }))
   }
@@ -446,6 +466,74 @@ function App() {
       setSelectedBundleId(note.bundleId)
     }
     navigate('note')
+  }
+
+  function parentViewForOpenNote() {
+    if (selectedProject) return 'project'
+    if (selectedBundle) return 'bundle'
+    return 'dashboard'
+  }
+
+  function isMobileLayout() {
+    return window.matchMedia('(max-width: 900px)').matches
+  }
+
+  function closeNote() {
+    setDetailFullscreen(false)
+    setSelectedNoteId(undefined)
+    if (isMobileLayout()) navigate(parentViewForOpenNote())
+  }
+
+  function backFromNote() {
+    const parentView = parentViewForOpenNote()
+    if (isMobileLayout()) setSelectedNoteId(undefined)
+    navigate(parentView)
+  }
+
+  function setTodoSectionExpanded(sectionKey: string, expanded: boolean) {
+    setExpandedTodoSections((current) => {
+      const next = new Set(current)
+      if (expanded) {
+        next.add(sectionKey)
+      } else {
+        next.delete(sectionKey)
+      }
+      return next
+    })
+  }
+
+  function resizePaneFromClientX(clientX: number) {
+    const grid = paneGridRef.current
+    if (!grid) return
+    const rect = grid.getBoundingClientRect()
+    const nextSplit = (clientX - rect.left) / rect.width
+    setPaneSplit(Math.min(0.52, Math.max(0.38, nextSplit)))
+  }
+
+  function startPaneResize(event: PointerEvent<HTMLButtonElement>) {
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    resizePaneFromClientX(event.clientX)
+
+    const handleMove = (moveEvent: globalThis.PointerEvent) => {
+      resizePaneFromClientX(moveEvent.clientX)
+    }
+    const handleUp = () => {
+      window.removeEventListener('pointermove', handleMove)
+      window.removeEventListener('pointerup', handleUp)
+    }
+
+    window.addEventListener('pointermove', handleMove)
+    window.addEventListener('pointerup', handleUp, { once: true })
+  }
+
+  function nudgePaneResize(event: KeyboardEvent<HTMLButtonElement>) {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+    event.preventDefault()
+    setPaneSplit((current) => {
+      const direction = event.key === 'ArrowLeft' ? -0.02 : 0.02
+      return Math.min(0.52, Math.max(0.38, current + direction))
+    })
   }
 
   function openSearchResult(result: SearchResult) {
@@ -521,7 +609,7 @@ function App() {
     pushToast('Note created.')
   }
 
-  async function handleCreateTodoList(parentType?: 'bundle' | 'project' | 'note', parentId?: string) {
+  async function handleCreateTodoList(parentType?: ParentType, parentId?: string) {
     let targetType = parentType
     let targetId = parentId
     if (!targetType || !targetId) {
@@ -538,8 +626,11 @@ function App() {
       }
     }
     const list = await createTodoList(targetType, targetId, 'New todo list')
+    setNewTodoListId(list.id)
+    setTodoSectionExpanded(todoSectionKey(targetType, targetId), true)
     pushToast('Todo list created.')
     openTodoParent(list)
+    return list
   }
 
   async function handleQuickCapture(text: string) {
@@ -702,9 +793,8 @@ function App() {
           onOpenBundle={openBundle}
           onOpenProject={openProject}
           onOpenNote={openNote}
-          onCreateBundle={handleCreateBundle}
           onCreateNote={handleCreateNote}
-          onCapture={() => setQuickCaptureOpen(true)}
+          onOpenInbox={() => navigate('inbox')}
         />
       )
     }
@@ -765,6 +855,9 @@ function App() {
           onCreateNote={(title) => handleCreateNote({ bundleId: selectedBundle.id, title })}
           onCreateProject={(title) => handleCreateProject(selectedBundle.id, title)}
           onCreateTodoList={() => handleCreateTodoList('bundle', selectedBundle.id)}
+          newTodoListId={newTodoListId}
+          expandedTodoSections={expandedTodoSections}
+          onTodoSectionExpanded={setTodoSectionExpanded}
           onArchive={(type, id, title) => askArchive(type, id, title)}
           onDelete={(type, id, title) => askDelete(type, id, title)}
         />
@@ -792,6 +885,9 @@ function App() {
           onOpenNote={openNote}
           onCreateNote={(title) => handleCreateNote({ projectId: selectedProject.id, title })}
           onCreateTodoList={() => handleCreateTodoList('project', selectedProject.id)}
+          newTodoListId={newTodoListId}
+          expandedTodoSections={expandedTodoSections}
+          onTodoSectionExpanded={setTodoSectionExpanded}
           onArchive={(type, id, title) => askArchive(type, id, title)}
           onDelete={(type, id, title) => askDelete(type, id, title)}
         />
@@ -891,16 +987,28 @@ function App() {
           projects={activeProjects}
           todoLists={activeTodoLists}
           todoItems={data.todoItems}
-          onBack={() => navigate(selectedProject ? 'project' : 'bundle')}
+          onBack={backFromNote}
+          onClose={closeNote}
+          fullscreen={detailFullscreen}
+          onToggleFullscreen={() => setDetailFullscreen((current) => !current)}
           onSave={async (patch) => updateNote(selectedNote.id, patch)}
           onCreateTodoList={() => handleCreateTodoList('note', selectedNote.id)}
+          newTodoListId={newTodoListId}
+          expandedTodoSections={expandedTodoSections}
+          onTodoSectionExpanded={setTodoSectionExpanded}
           onArchive={() => askArchive('note', selectedNote.id, selectedNote.title)}
           onDelete={() => askDelete('note', selectedNote.id, selectedNote.title)}
+          onArchiveTodo={(type, id, title) => askArchive(type, id, title)}
+          onDeleteTodo={(type, id, title) => askDelete(type, id, title)}
           onOpenTodoParent={openTodoParent}
           pushToast={pushToast}
         />
       ) : (
-        <EditorBlankState onCreate={() => void handleCreateNote()} />
+        <EditorBlankState
+          notes={activeNotes}
+          onCreate={() => void handleCreateNote()}
+          onOpen={openNote}
+        />
       )
     }
     if (view === 'project' && selectedProject) {
@@ -923,12 +1031,24 @@ function App() {
         />
       )
     }
-    return <EditorBlankState onCreate={() => void handleCreateNote()} />
+    return (
+      <EditorBlankState
+        notes={activeNotes}
+        onCreate={() => void handleCreateNote()}
+        onOpen={openNote}
+      />
+    )
   }
+
+  const paneStyle = { '--middle-pane-size': `${paneSplit * 100}%` } as CSSProperties
 
   return (
     <main
-      className={clsx('app-root', settings.sidebarCollapsed && 'sidebar-collapsed')}
+      className={clsx(
+        'app-root',
+        settings.sidebarCollapsed && 'sidebar-collapsed',
+        detailFullscreen && 'detail-fullscreen',
+      )}
       data-view={view}
     >
       {!settings.onboardingComplete && (
@@ -954,6 +1074,7 @@ function App() {
       />
 
       <section className="workspace-shell">
+        <MobileHeader onNavigateDesk={() => navigate('dashboard')} />
         <Topbar
           view={view}
           searchQuery={searchQuery}
@@ -973,21 +1094,31 @@ function App() {
           }}
         />
 
-        <div className="pane-grid">
+        <div className="pane-grid" ref={paneGridRef} style={paneStyle}>
           <section className="middle-panel">{renderMainPanel()}</section>
+          <button
+            type="button"
+            className="pane-resizer"
+            aria-label="Resize editor panes"
+            aria-orientation="vertical"
+            onPointerDown={startPaneResize}
+            onKeyDown={nudgePaneResize}
+          />
           <section className="detail-panel">{renderDetailPanel()}</section>
         </div>
       </section>
 
       <MobileNav activeView={view} onNavigate={navigate} />
-      <button
-        type="button"
-        className="mobile-capture"
-        aria-label="Quick capture"
-        onClick={() => setQuickCaptureOpen(true)}
-      >
-        <Plus size={22} />
-      </button>
+      {view === 'dashboard' && (
+        <button
+          type="button"
+          className="mobile-capture"
+          aria-label="Quick capture"
+          onClick={() => setQuickCaptureOpen(true)}
+        >
+          <Plus size={22} />
+        </button>
+      )}
 
       {quickCaptureOpen && (
         <QuickCaptureDialog
@@ -1052,12 +1183,10 @@ function Sidebar(props: {
         <div className="app-stamp" aria-hidden="true">
           W
         </div>
-        {!props.collapsed && (
-          <div>
-            <strong>{APP_NAME}</strong>
-            <span>My Library</span>
-          </div>
-        )}
+        <div className="sidebar-brand-copy">
+          <strong>{APP_NAME}</strong>
+          <span>My Library</span>
+        </div>
       </div>
       <nav className="sidebar-nav" aria-label="Primary">
         {navItems.map((item) => {
@@ -1071,7 +1200,7 @@ function Sidebar(props: {
               title={item.label}
             >
               <Icon size={17} />
-              {!props.collapsed && <span>{item.label}</span>}
+              <span className="sidebar-label">{item.label}</span>
               {!props.collapsed && item.view === 'inbox' && props.inboxCount > 0 && (
                 <mark>{props.inboxCount}</mark>
               )}
@@ -1098,10 +1227,26 @@ function Sidebar(props: {
           </span>
         )}
         <button type="button" aria-label="Toggle sidebar" onClick={props.onToggleCollapse}>
-          <PanelLeftClose size={16} />
+          {props.collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
         </button>
       </div>
     </aside>
+  )
+}
+
+function MobileHeader(props: { onNavigateDesk: () => void }) {
+  return (
+    <header className="mobile-header">
+      <button type="button" onClick={props.onNavigateDesk} aria-label="Go to Desk">
+        <span className="mobile-stamp" aria-hidden="true">
+          W
+        </span>
+        <span>
+          <strong>{APP_NAME}</strong>
+          <small>My Library</small>
+        </span>
+      </button>
+    </header>
   )
 }
 
@@ -1185,6 +1330,7 @@ function MobileNav(props: { activeView: ViewKey; onNavigate: (view: ViewKey) => 
     { view: 'bundles', label: 'Bundles', icon: Folder },
     { view: 'search', label: 'Search', icon: Search },
     { view: 'archive', label: 'Archive', icon: Archive },
+    { view: 'trash', label: 'Trash', icon: Trash2 },
     { view: 'settings', label: 'Settings', icon: Settings },
   ]
   return (
@@ -1197,9 +1343,11 @@ function MobileNav(props: { activeView: ViewKey; onNavigate: (view: ViewKey) => 
             type="button"
             className={clsx(props.activeView === item.view && 'active')}
             onClick={() => props.onNavigate(item.view)}
+            aria-label={item.label}
+            title={item.label}
           >
             <Icon size={18} />
-            <span>{item.label}</span>
+            <span className="sr-only">{item.label}</span>
           </button>
         )
       })}
@@ -1217,27 +1365,14 @@ function DashboardPanel(props: {
   onOpenBundle: (bundle: Bundle) => void
   onOpenProject: (project: Project) => void
   onOpenNote: (note: Note) => void
-  onCreateBundle: (title?: string) => Promise<void>
   onCreateNote: () => Promise<void>
-  onCapture: () => void
+  onOpenInbox: () => void
 }) {
   return (
     <div className="panel-stack">
       <PanelHeader
         eyebrow="Local desk"
         title="Capture, then sort it later."
-        actions={
-          <>
-            <button type="button" className="system-button" onClick={() => void props.onCreateBundle()}>
-              <Folder size={15} />
-              Bundle
-            </button>
-            <button type="button" className="primary-button" onClick={props.onCapture}>
-              <Plus size={15} />
-              Quick capture
-            </button>
-          </>
-        }
       />
       <div className="stat-row">
         <Stat label="Bundles" value={props.activeBundles.length} />
@@ -1245,18 +1380,25 @@ function DashboardPanel(props: {
         <Stat label="Projects" value={props.activeProjects.length} />
         <Stat label="Open todos" value={countOpenTodos(props.activeTodoLists, props.todoItems)} />
       </div>
-      <section className="window-panel">
-        <WindowTitle icon={<Inbox size={15} />} title="Inbox strip" />
-        <div className="quick-strip">
-          <button type="button" onClick={props.onCapture}>
-            Capture a thought before it escapes.
-          </button>
-          <span>{props.captures.length} waiting</span>
+      <CollapsibleSection
+        icon={<Inbox size={15} />}
+        title="Inbox strip"
+        defaultOpen
+        action={<span className="window-count">{props.captures.length} waiting</span>}
+      >
+        <div className="inbox-strip-list">
+          {props.captures.slice(0, 4).map((capture) => (
+            <button key={capture.id} type="button" className="capture-strip-row" onClick={props.onOpenInbox}>
+              <strong>{capture.title}</strong>
+              <span>{oneLine(capture.body)}</span>
+              <small>Captured {displayDate(capture.createdAt)}</small>
+            </button>
+          ))}
+          {props.captures.length === 0 && <EmptyMini body="No waiting captures." />}
         </div>
-      </section>
+      </CollapsibleSection>
       <section className="split-section">
-        <div className="window-panel">
-          <WindowTitle icon={<FileText size={15} />} title="Recently updated notes" />
+        <CollapsibleSection icon={<FileText size={15} />} title="Recently updated notes" defaultOpen>
           <div className="row-list">
             {props.activeNotes.slice(0, 6).map((note) => (
               <NoteRow key={note.id} note={note} onOpen={() => props.onOpenNote(note)} />
@@ -1265,9 +1407,8 @@ function DashboardPanel(props: {
               <EmptyMini body="No notes yet." action="New note" onAction={() => void props.onCreateNote()} />
             )}
           </div>
-        </div>
-        <div className="window-panel">
-          <WindowTitle icon={<FolderOpen size={15} />} title="Pinned bundles" />
+        </CollapsibleSection>
+        <CollapsibleSection icon={<FolderOpen size={15} />} title="Pinned bundles" defaultOpen>
           <div className="bundle-tile-list">
             {props.activeBundles.slice(0, 5).map((bundle) => (
               <button key={bundle.id} type="button" onClick={() => props.onOpenBundle(bundle)}>
@@ -1278,21 +1419,16 @@ function DashboardPanel(props: {
             ))}
             {props.activeBundles.length === 0 && <EmptyMini body="Nothing here yet." />}
           </div>
-        </div>
+        </CollapsibleSection>
       </section>
-      <section className="window-panel">
-        <WindowTitle icon={<SlidersHorizontal size={15} />} title="Active projects" />
-        <div className="card-grid">
+      <CollapsibleSection icon={<SlidersHorizontal size={15} />} title="Active projects" defaultOpen>
+        <div className="row-list">
           {props.activeProjects.slice(0, 4).map((project) => (
-            <button key={project.id} type="button" className="project-card" onClick={() => props.onOpenProject(project)}>
-              <span className="card-label">{project.status}</span>
-              <strong>{project.title}</strong>
-              <small>{oneLine(project.description, 'No description.')}</small>
-            </button>
+            <ProjectRow key={project.id} project={project} onOpen={() => props.onOpenProject(project)} />
           ))}
           {props.activeProjects.length === 0 && <EmptyMini body="No active projects." />}
         </div>
-      </section>
+      </CollapsibleSection>
     </div>
   )
 }
@@ -1447,12 +1583,15 @@ function BundlePanel(props: {
   onOpenProject: (project: Project) => void
   onCreateNote: (title?: string) => Promise<void>
   onCreateProject: (title?: string) => Promise<void>
-  onCreateTodoList: () => Promise<void>
+  onCreateTodoList: () => Promise<TodoList>
+  newTodoListId?: string
+  expandedTodoSections: Set<string>
+  onTodoSectionExpanded: (sectionKey: string, expanded: boolean) => void
   onArchive: (type: EntityType, id: string, title: string) => void
   onDelete: (type: EntityType, id: string, title: string) => void
 }) {
   const bundleProjects = props.activeProjects.filter((project) => project.bundleId === props.bundle.id)
-  const bundleNotes = props.activeNotes.filter((note) => note.bundleId === props.bundle.id)
+  const bundleNotes = props.activeNotes.filter((note) => note.bundleId === props.bundle.id && !note.projectId)
   const bundleProjectIds = new Set(bundleProjects.map((project) => project.id))
   const bundleNoteIds = new Set(bundleNotes.map((note) => note.id))
   const bundleTodoLists = props.activeTodoLists.filter(
@@ -1464,12 +1603,13 @@ function BundlePanel(props: {
   const archived = collectRecords(props.data, (record) => {
     if (!isArchived(record)) return false
     if (record.type === 'project') return record.bundleId === props.bundle.id
-    if (record.type === 'note') return record.bundleId === props.bundle.id
+    if (record.type === 'note') return record.bundleId === props.bundle.id && !record.projectId
     if (record.type === 'todoList') return bundleTodoLists.some((list) => list.id === record.id)
     return record.type === 'todoItem'
   })
   const [noteTitle, setNoteTitle] = useState('')
   const [projectTitle, setProjectTitle] = useState('')
+  const todoKey = todoSectionKey('bundle', props.bundle.id)
   return (
     <div className="panel-stack">
       <PanelHeader eyebrow="Bundle" title={props.bundle.title} sub={props.bundle.description || 'No description.'} />
@@ -1488,44 +1628,39 @@ function BundlePanel(props: {
       {props.tab === 'overview' && (
         <>
           <section className="split-section">
-            <div className="window-panel">
-              <WindowTitle icon={<FileText size={15} />} title="Pinned and recent notes" />
+            <CollapsibleSection icon={<FileText size={15} />} title="Pinned and recent notes" defaultOpen>
               <div className="row-list">
                 {bundleNotes.slice(0, 6).map((note) => (
                   <NoteRow key={note.id} note={note} onOpen={() => props.onOpenNote(note)} />
                 ))}
                 {bundleNotes.length === 0 && <EmptyMini body="No notes in this bundle." />}
               </div>
-            </div>
-            <div className="window-panel">
-              <WindowTitle icon={<SlidersHorizontal size={15} />} title="Active projects" />
+            </CollapsibleSection>
+            <CollapsibleSection icon={<SlidersHorizontal size={15} />} title="Active projects" defaultOpen>
               <div className="row-list">
                 {bundleProjects.slice(0, 6).map((project) => (
-                  <button key={project.id} type="button" className="list-row" onClick={() => props.onOpenProject(project)}>
-                    <span className="color-dot" style={{ background: project.color }} />
-                    <strong>{project.title}</strong>
-                    <small>{project.status}</small>
-                  </button>
+                  <ProjectRow key={project.id} project={project} onOpen={() => props.onOpenProject(project)} />
                 ))}
                 {bundleProjects.length === 0 && <EmptyMini body="No projects yet." />}
               </div>
-            </div>
+            </CollapsibleSection>
           </section>
-          <section className="window-panel">
-            <WindowTitle icon={<ListTodo size={15} />} title="Open todos" />
-            <TodoListCollection
-              lists={bundleTodoLists}
-              items={props.todoItems}
-              data={props.data}
-              onArchive={props.onArchive}
-              onDelete={props.onDelete}
-            />
-          </section>
+          <TodoSection
+            sectionKey={todoKey}
+            expanded={props.expandedTodoSections.has(todoKey)}
+            lists={bundleTodoLists}
+            items={props.todoItems}
+            data={props.data}
+            newTodoListId={props.newTodoListId}
+            onExpandedChange={props.onTodoSectionExpanded}
+            onCreateTodoList={props.onCreateTodoList}
+            onArchive={props.onArchive}
+            onDelete={props.onDelete}
+          />
         </>
       )}
       {props.tab === 'notes' && (
-        <section className="window-panel">
-          <WindowTitle icon={<FileText size={15} />} title="Notes" />
+        <CollapsibleSection icon={<FileText size={15} />} title="Notes" defaultOpen>
           <InlineCreate
             value={noteTitle}
             placeholder="New note title"
@@ -1558,11 +1693,10 @@ function BundlePanel(props: {
             ))}
             {bundleNotes.length === 0 && <EmptyMini body="No notes in this bundle." />}
           </div>
-        </section>
+        </CollapsibleSection>
       )}
       {props.tab === 'projects' && (
-        <section className="window-panel">
-          <WindowTitle icon={<SlidersHorizontal size={15} />} title="Projects" />
+        <CollapsibleSection icon={<SlidersHorizontal size={15} />} title="Projects" defaultOpen>
           <InlineCreate
             value={projectTitle}
             placeholder="New project title"
@@ -1573,48 +1707,59 @@ function BundlePanel(props: {
               setProjectTitle('')
             }}
           />
-          <div className="card-grid">
+          <div className="row-list">
             {bundleProjects.map((project) => (
-              <button key={project.id} type="button" className="project-card" onClick={() => props.onOpenProject(project)}>
-                <span className="card-label">{project.status}</span>
-                <strong>{project.title}</strong>
-                <small>{oneLine(project.description, 'No description.')}</small>
-              </button>
+              <ProjectRow key={project.id} project={project} onOpen={() => props.onOpenProject(project)} />
             ))}
             {bundleProjects.length === 0 && <EmptyMini body="No projects yet." />}
           </div>
-        </section>
+        </CollapsibleSection>
       )}
       {props.tab === 'todos' && (
-        <section className="window-panel">
-          <WindowTitle
-            icon={<ListTodo size={15} />}
-            title="Todos"
-            action={
-              <button type="button" onClick={() => void props.onCreateTodoList()}>
-                <Plus size={14} />
-                List
-              </button>
-            }
-          />
-          <TodoListCollection
-            lists={bundleTodoLists}
-            items={props.todoItems}
-            data={props.data}
-            onArchive={props.onArchive}
-            onDelete={props.onDelete}
-          />
-        </section>
-      )}
-      {props.tab === 'archive' && (
-        <RecordList
-          title="Archived in this bundle"
-          records={archived}
-          empty="No archived records in this bundle."
+        <TodoSection
+          sectionKey={todoKey}
+          expanded={props.expandedTodoSections.has(todoKey)}
+          lists={bundleTodoLists}
+          items={props.todoItems}
+          data={props.data}
+          newTodoListId={props.newTodoListId}
+          onExpandedChange={props.onTodoSectionExpanded}
+          onCreateTodoList={props.onCreateTodoList}
           onArchive={props.onArchive}
           onDelete={props.onDelete}
         />
       )}
+      {props.tab === 'archive' && (
+        <CollapsibleSection icon={<Archive size={15} />} title="Archived in this bundle" defaultOpen>
+          <div className="row-list">
+            {archived.map((record) => (
+              <RecordRow
+                key={`${record.type}-${record.id}`}
+                record={record}
+                actions={
+                  <>
+                    <button type="button" onClick={() => props.onArchive(record.type, record.id, recordTitle(record))}>
+                      <Archive size={14} />
+                      Archive
+                    </button>
+                    <button type="button" onClick={() => props.onDelete(record.type, record.id, recordTitle(record))}>
+                      <Trash2 size={14} />
+                      Trash
+                    </button>
+                  </>
+                }
+              />
+            ))}
+            {archived.length === 0 && <EmptyMini body="No archived records in this bundle." />}
+          </div>
+        </CollapsibleSection>
+      )}
+      <BundleEditCard
+        bundle={props.bundle}
+        onSave={(patch) => updateBundle(props.bundle.id, patch)}
+        onArchive={() => props.onArchive('bundle', props.bundle.id, props.bundle.title)}
+        onDelete={() => props.onDelete('bundle', props.bundle.id, props.bundle.title)}
+      />
     </div>
   )
 }
@@ -1628,7 +1773,10 @@ function ProjectPanel(props: {
   onBack: () => void
   onOpenNote: (note: Note) => void
   onCreateNote: (title?: string) => Promise<void>
-  onCreateTodoList: () => Promise<void>
+  onCreateTodoList: () => Promise<TodoList>
+  newTodoListId?: string
+  expandedTodoSections: Set<string>
+  onTodoSectionExpanded: (sectionKey: string, expanded: boolean) => void
   onArchive: (type: EntityType, id: string, title: string) => void
   onDelete: (type: EntityType, id: string, title: string) => void
 }) {
@@ -1637,6 +1785,7 @@ function ProjectPanel(props: {
   const todoLists = props.activeTodoLists.filter(
     (list) => list.parentType === 'project' && list.parentId === props.project.id,
   )
+  const todoKey = todoSectionKey('project', props.project.id)
   return (
     <div className="panel-stack">
       <button type="button" className="back-button" onClick={props.onBack}>
@@ -1644,8 +1793,7 @@ function ProjectPanel(props: {
         Bundle
       </button>
       <PanelHeader eyebrow="Project" title={props.project.title} sub={props.project.description || props.project.status} />
-      <section className="window-panel">
-        <WindowTitle icon={<FileText size={15} />} title="Linked notes" />
+      <CollapsibleSection icon={<FileText size={15} />} title="Linked notes" defaultOpen>
         <InlineCreate
           value={noteTitle}
           placeholder="New note title"
@@ -1678,26 +1826,25 @@ function ProjectPanel(props: {
           ))}
           {notes.length === 0 && <EmptyMini body="No notes in this project." />}
         </div>
-      </section>
-      <section className="window-panel">
-        <WindowTitle
-          icon={<ListTodo size={15} />}
-          title="Project todos"
-          action={
-            <button type="button" onClick={() => void props.onCreateTodoList()}>
-              <Plus size={14} />
-              List
-            </button>
-          }
-        />
-        <TodoListCollection
-          lists={todoLists}
-          items={props.todoItems}
-          data={props.data}
-          onArchive={props.onArchive}
-          onDelete={props.onDelete}
-        />
-      </section>
+      </CollapsibleSection>
+      <TodoSection
+        sectionKey={todoKey}
+        expanded={props.expandedTodoSections.has(todoKey)}
+        lists={todoLists}
+        items={props.todoItems}
+        data={props.data}
+        newTodoListId={props.newTodoListId}
+        onExpandedChange={props.onTodoSectionExpanded}
+        onCreateTodoList={props.onCreateTodoList}
+        onArchive={props.onArchive}
+        onDelete={props.onDelete}
+      />
+      <ProjectEditCard
+        project={props.project}
+        onSave={(patch) => updateProject(props.project.id, patch)}
+        onArchive={() => props.onArchive('project', props.project.id, props.project.title)}
+        onDelete={() => props.onDelete('project', props.project.id, props.project.title)}
+      />
     </div>
   )
 }
@@ -1975,7 +2122,7 @@ function SettingsPanel(props: {
             >
               <option value="warm">Warm Retro</option>
               <option value="paper">Paper</option>
-              <option value="terminal">Dark Terminal</option>
+              <option value="terminal">Night Desk</option>
             </select>
           </label>
           <label>
@@ -2049,10 +2196,18 @@ function NoteEditor(props: {
   todoLists: TodoList[]
   todoItems: TodoItem[]
   onBack: () => void
+  onClose: () => void
+  fullscreen: boolean
+  onToggleFullscreen: () => void
   onSave: (patch: Partial<Note>) => Promise<void>
-  onCreateTodoList: () => Promise<void>
+  onCreateTodoList: () => Promise<TodoList>
+  newTodoListId?: string
+  expandedTodoSections: Set<string>
+  onTodoSectionExpanded: (sectionKey: string, expanded: boolean) => void
   onArchive: () => void
   onDelete: () => void
+  onArchiveTodo: (type: EntityType, id: string, title: string) => void
+  onDeleteTodo: (type: EntityType, id: string, title: string) => void
   onOpenTodoParent: (list: TodoList) => void
   pushToast: (text: string) => void
 }) {
@@ -2083,13 +2238,27 @@ function NoteEditor(props: {
   }, [body, props, tags, title])
 
   const bundleProjects = props.projects.filter((project) => project.bundleId === props.note.bundleId)
+  const todoKey = todoSectionKey('note', props.note.id)
   return (
     <article className="note-editor">
       <div className="editor-titlebar">
-        <button type="button" className="back-button" onClick={props.onBack}>
-          <ChevronLeft size={15} />
-          Back
-        </button>
+        <div className="editor-window-controls">
+          <button type="button" className="mac-control close" aria-label="Close note" onClick={props.onClose}>
+            <X size={11} />
+          </button>
+          <button type="button" className="mac-control back" aria-label="Back" title="Back" onClick={props.onBack}>
+            <ChevronLeft size={15} />
+          </button>
+          <button
+            type="button"
+            className="mac-control fullscreen"
+            aria-label={props.fullscreen ? 'Exit fullscreen editor' : 'Fullscreen editor'}
+            title={props.fullscreen ? 'Exit fullscreen editor' : 'Fullscreen editor'}
+            onClick={props.onToggleFullscreen}
+          >
+            {props.fullscreen ? <Minimize2 size={11} /> : <Maximize2 size={11} />}
+          </button>
+        </div>
         <span>{saveState === 'saving' ? 'Saving...' : `Saved ${displayDate(props.note.lastSavedAt)}`}</span>
       </div>
       <section className="paper-sheet">
@@ -2165,52 +2334,61 @@ function NoteEditor(props: {
       <div className="button-row editor-actions">
         <button
           type="button"
+          aria-label="Save now"
+          title="Save now"
           onClick={() => {
             void props.onSave({ title: title.trim() || 'Untitled note', body })
             props.pushToast('Note saved.')
           }}
         >
           <Save size={14} />
-          Save now
         </button>
-        <button type="button" onClick={() => void props.onSave({ pinned: !props.note.pinned })}>
+        <button
+          type="button"
+          aria-label={props.note.pinned ? 'Unpin note' : 'Pin note'}
+          title={props.note.pinned ? 'Unpin note' : 'Pin note'}
+          onClick={() => void props.onSave({ pinned: !props.note.pinned })}
+        >
           <Pin size={14} />
-          {props.note.pinned ? 'Unpin' : 'Pin'}
         </button>
-        <button type="button" onClick={() => void props.onSave({ favorite: !props.note.favorite })}>
+        <button
+          type="button"
+          aria-label={props.note.favorite ? 'Unfavorite note' : 'Favorite note'}
+          title={props.note.favorite ? 'Unfavorite note' : 'Favorite note'}
+          onClick={() => void props.onSave({ favorite: !props.note.favorite })}
+        >
           <Star size={14} />
-          {props.note.favorite ? 'Unfavorite' : 'Favorite'}
         </button>
-        <button type="button" onClick={() => void props.onCreateTodoList()}>
+        <button type="button" aria-label="New todo list" title="New todo list" onClick={() => void props.onCreateTodoList()}>
           <ListTodo size={14} />
-          Todo list
         </button>
-        <button type="button" onClick={props.onArchive}>
+        <button type="button" aria-label="Archive note" title="Archive note" onClick={props.onArchive}>
           <Archive size={14} />
-          Archive
         </button>
-        <button type="button" onClick={props.onDelete}>
+        <button type="button" aria-label="Trash note" title="Trash note" onClick={props.onDelete}>
           <Trash2 size={14} />
-          Trash
         </button>
       </div>
-      <section className="window-panel linked-todos">
-        <WindowTitle icon={<ListTodo size={15} />} title="Linked todos" />
-        <TodoListCollection
-          lists={noteTodoLists}
-          items={props.todoItems}
-          data={{
-            bundles: props.bundles,
-            projects: props.projects,
-            notes: [props.note],
-            todoLists: props.todoLists,
-            todoItems: props.todoItems,
-            quickCaptures: [],
-          }}
-          onArchive={() => undefined}
-          onDelete={() => undefined}
-        />
-      </section>
+      <TodoSection
+        sectionKey={todoKey}
+        className="linked-todos"
+        expanded={props.expandedTodoSections.has(todoKey)}
+        lists={noteTodoLists}
+        items={props.todoItems}
+        data={{
+          bundles: props.bundles,
+          projects: props.projects,
+          notes: [props.note],
+          todoLists: props.todoLists,
+          todoItems: props.todoItems,
+          quickCaptures: [],
+        }}
+        newTodoListId={props.newTodoListId}
+        onExpandedChange={props.onTodoSectionExpanded}
+        onCreateTodoList={props.onCreateTodoList}
+        onArchive={props.onArchiveTodo}
+        onDelete={props.onDeleteTodo}
+      />
     </article>
   )
 }
@@ -2319,10 +2497,178 @@ function ProjectInspector(props: {
   )
 }
 
+function BundleEditCard(props: {
+  bundle: Bundle
+  onSave: (patch: Partial<Bundle>) => Promise<void>
+  onArchive: () => void
+  onDelete: () => void
+}) {
+  return (
+    <CollapsibleSection className="inline-detail-card" icon={<FolderOpen size={15} />} title="Bundle card" defaultOpen>
+      <div className="detail-card-body">
+        <label>
+          <span>Title</span>
+          <input value={props.bundle.title} onChange={(event) => void props.onSave({ title: event.target.value })} />
+        </label>
+        <label>
+          <span>Description</span>
+          <textarea
+            value={props.bundle.description}
+            onChange={(event) => void props.onSave({ description: event.target.value })}
+          />
+        </label>
+        <label>
+          <span>Color</span>
+          <input type="color" value={props.bundle.color} onChange={(event) => void props.onSave({ color: event.target.value })} />
+        </label>
+        <label className="check-row">
+          <input
+            type="checkbox"
+            checked={props.bundle.pinned}
+            onChange={(event) => void props.onSave({ pinned: event.target.checked })}
+          />
+          <span>Pinned</span>
+        </label>
+        <label className="check-row">
+          <input
+            type="checkbox"
+            checked={props.bundle.favorite}
+            onChange={(event) => void props.onSave({ favorite: event.target.checked })}
+          />
+          <span>Favorite</span>
+        </label>
+        <div className="button-row">
+          <button type="button" onClick={props.onArchive}>
+            <Archive size={14} />
+            Archive
+          </button>
+          <button type="button" onClick={props.onDelete}>
+            <Trash2 size={14} />
+            Trash
+          </button>
+        </div>
+      </div>
+    </CollapsibleSection>
+  )
+}
+
+function ProjectEditCard(props: {
+  project: Project
+  onSave: (patch: Partial<Project>) => Promise<void>
+  onArchive: () => void
+  onDelete: () => void
+}) {
+  return (
+    <CollapsibleSection className="inline-detail-card" icon={<SlidersHorizontal size={15} />} title="Project card" defaultOpen>
+      <div className="detail-card-body">
+        <label>
+          <span>Title</span>
+          <input value={props.project.title} onChange={(event) => void props.onSave({ title: event.target.value })} />
+        </label>
+        <label>
+          <span>Description</span>
+          <textarea
+            value={props.project.description}
+            onChange={(event) => void props.onSave({ description: event.target.value })}
+          />
+        </label>
+        <label>
+          <span>Status</span>
+          <select value={props.project.status} onChange={(event) => void props.onSave({ status: event.target.value as Project['status'] })}>
+            <option value="idea">idea</option>
+            <option value="active">active</option>
+            <option value="paused">paused</option>
+            <option value="completed">completed</option>
+            <option value="archived">archived</option>
+          </select>
+        </label>
+        <label className="check-row">
+          <input
+            type="checkbox"
+            checked={props.project.pinned}
+            onChange={(event) => void props.onSave({ pinned: event.target.checked })}
+          />
+          <span>Pinned</span>
+        </label>
+        <div className="button-row">
+          <button type="button" onClick={props.onArchive}>
+            <Archive size={14} />
+            Archive
+          </button>
+          <button type="button" onClick={props.onDelete}>
+            <Trash2 size={14} />
+            Trash
+          </button>
+        </div>
+      </div>
+    </CollapsibleSection>
+  )
+}
+
+function TodoSection(props: {
+  sectionKey: string
+  className?: string
+  expanded: boolean
+  lists: TodoList[]
+  items: TodoItem[]
+  data: LoadedData
+  newTodoListId?: string
+  onExpandedChange: (sectionKey: string, expanded: boolean) => void
+  onCreateTodoList?: () => Promise<TodoList>
+  onArchive: (type: EntityType, id: string, title: string) => void
+  onDelete: (type: EntityType, id: string, title: string) => void
+}) {
+  const count = props.lists.length
+  return (
+    <section className={clsx('window-panel todo-section', props.className)}>
+      <WindowTitle
+        icon={<ListTodo size={15} />}
+        title="Todos"
+        action={
+          <div className="todo-section-actions">
+            {props.onCreateTodoList && (
+              <button
+                type="button"
+                aria-label="New todo list"
+                title="New todo list"
+                onClick={() => void props.onCreateTodoList?.()}
+              >
+                <Plus size={14} />
+              </button>
+            )}
+            <button
+              type="button"
+              className={clsx('todo-section-toggle', props.expanded && 'open')}
+              aria-label={props.expanded ? 'Collapse todos' : 'Expand todos'}
+              title={props.expanded ? 'Collapse todos' : 'Expand todos'}
+              aria-expanded={props.expanded}
+              onClick={() => props.onExpandedChange(props.sectionKey, !props.expanded)}
+            >
+              <ChevronDown size={14} />
+              <span>{count}</span>
+            </button>
+          </div>
+        }
+      />
+      {props.expanded && (
+        <TodoListCollection
+          lists={props.lists}
+          items={props.items}
+          data={props.data}
+          newTodoListId={props.newTodoListId}
+          onArchive={props.onArchive}
+          onDelete={props.onDelete}
+        />
+      )}
+    </section>
+  )
+}
+
 function TodoListCollection(props: {
   lists: TodoList[]
   items: TodoItem[]
   data: LoadedData
+  newTodoListId?: string
   onArchive: (type: EntityType, id: string, title: string) => void
   onDelete: (type: EntityType, id: string, title: string) => void
 }) {
@@ -2335,6 +2681,7 @@ function TodoListCollection(props: {
           list={list}
           items={activeTodoItems(list.id, props.items)}
           parentLabel={itemParentLabel(list, props.data)}
+          startEditing={list.id === props.newTodoListId}
           onArchive={props.onArchive}
           onDelete={props.onDelete}
         />
@@ -2347,51 +2694,103 @@ function TodoListCard(props: {
   list: TodoList
   items: TodoItem[]
   parentLabel: string
+  startEditing?: boolean
   onArchive: (type: EntityType, id: string, title: string) => void
   onDelete: (type: EntityType, id: string, title: string) => void
 }) {
+  const [editing, setEditing] = useState(Boolean(props.startEditing))
   const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('all')
   const [text, setText] = useState('')
+  const [draftTitle, setDraftTitle] = useState(props.list.title)
   const completed = props.items.filter((item) => item.completed).length
+  const nextTitle = draftTitle.trim() || 'New todo list'
+  const titleChanged = nextTitle !== props.list.title
+  const taskChanged = text.trim().length > 0
+  const canSave = titleChanged || taskChanged
   const visibleItems = props.items.filter((item) => {
     if (filter === 'active') return !item.completed
     if (filter === 'completed') return item.completed
     return true
   })
+  function enterEditMode(event: MouseEvent<HTMLElement>) {
+    const target = event.target
+    if (target instanceof HTMLElement && target.closest('button,input,label,select,textarea,a')) return
+    setEditing(true)
+  }
+  async function saveEdits() {
+    if (!canSave) return
+    if (titleChanged) {
+      await updateTodoList(props.list.id, { title: nextTitle })
+    }
+    if (taskChanged) {
+      await createTodoItem(props.list.id, text.trim())
+    }
+    setText('')
+    setDraftTitle(nextTitle)
+    setEditing(false)
+  }
+  function cancelEdits() {
+    setDraftTitle(props.list.title)
+    setText('')
+    setEditing(false)
+  }
   return (
-    <article className="todo-card">
+    <article className={clsx('todo-card', editing && 'editing')} onClick={enterEditMode}>
+      {editing && (
+        <div className="todo-card-controls">
+          <button
+            type="button"
+            className="mac-control save"
+            aria-label="Save todo list"
+            title="Save todo list"
+            disabled={!canSave}
+            onClick={() => void saveEdits()}
+          >
+            <Check size={12} />
+          </button>
+          <button type="button" className="mac-control close" aria-label="Cancel todo edits" title="Cancel todo edits" onClick={cancelEdits}>
+            <X size={12} />
+          </button>
+        </div>
+      )}
       <div className="todo-title">
-        <input
-          value={props.list.title}
-          aria-label="Todo list title"
-          onChange={(event) => void updateTodoList(props.list.id, { title: event.target.value })}
-        />
+        {editing ? (
+          <input
+            value={draftTitle}
+            aria-label="Todo list title"
+            onChange={(event) => setDraftTitle(event.target.value)}
+          />
+        ) : (
+          <strong>{props.list.title}</strong>
+        )}
         <span>
           {completed}/{props.items.length} done
         </span>
       </div>
       <small>{props.parentLabel}</small>
-      <div className="segmented">
-        {(['all', 'active', 'completed'] as const).map((mode) => (
-          <button key={mode} type="button" className={clsx(filter === mode && 'active')} onClick={() => setFilter(mode)}>
-            {mode}
-          </button>
-        ))}
-      </div>
-      <form
-        className="todo-add"
-        onSubmit={(event) => {
-          event.preventDefault()
-          if (!text.trim()) return
-          void createTodoItem(props.list.id, text.trim())
-          setText('')
-        }}
-      >
-        <input value={text} placeholder="Add task" onChange={(event) => setText(event.target.value)} />
-        <button type="submit">
-          <Plus size={14} />
-        </button>
-      </form>
+      {editing && (
+        <>
+          <div className="segmented">
+            {(['all', 'active', 'completed'] as const).map((mode) => (
+              <button key={mode} type="button" className={clsx(filter === mode && 'active')} onClick={() => setFilter(mode)}>
+                {mode}
+              </button>
+            ))}
+          </div>
+          <form
+            className="todo-add"
+            onSubmit={(event) => {
+              event.preventDefault()
+              void saveEdits()
+            }}
+          >
+            <input value={text} placeholder="Add task" onChange={(event) => setText(event.target.value)} />
+            <button type="submit" aria-label="Save todo changes" title="Save todo changes" disabled={!canSave}>
+              <Check size={14} />
+            </button>
+          </form>
+        </>
+      )}
       <div className="todo-items">
         {visibleItems.map((item, index) => (
           <div key={item.id} className={clsx('todo-item', item.completed && 'done')}>
@@ -2403,48 +2802,55 @@ function TodoListCard(props: {
               />
               <span>{item.text}</span>
             </label>
-            <div className="todo-item-actions">
-              <button
-                type="button"
-                aria-label="Move up"
-                disabled={index === 0}
-                onClick={() => {
-                  const previous = visibleItems[index - 1]
-                  if (!previous) return
-                  void updateTodoItem(item.id, { order: previous.order - 1 })
-                }}
-              >
-                <ChevronLeft size={13} />
-              </button>
-              <button type="button" aria-label="Delete item" onClick={() => void softDeleteRecord('todoItem', item.id)}>
-                <X size={13} />
-              </button>
-            </div>
+            {editing && (
+              <div className="todo-item-actions">
+                <button
+                  type="button"
+                  aria-label="Move todo up"
+                  title="Move todo up"
+                  disabled={index === 0}
+                  onClick={() => {
+                    const previous = visibleItems[index - 1]
+                    if (!previous) return
+                    void updateTodoItem(item.id, { order: previous.order - 1 })
+                  }}
+                >
+                  <ChevronLeft size={13} />
+                </button>
+                <button
+                  type="button"
+                  aria-label="Delete todo"
+                  title="Delete todo"
+                  onClick={() => void softDeleteRecord('todoItem', item.id)}
+                >
+                  <X size={13} />
+                </button>
+              </div>
+            )}
           </div>
         ))}
         {visibleItems.length === 0 && <span className="empty-line">Nothing here yet.</span>}
       </div>
-      <div className="button-row">
-        <button
-          type="button"
-          onClick={() => {
-            for (const item of props.items.filter((todo) => todo.completed)) {
-              void archiveRecord('todoItem', item.id)
-            }
-          }}
-        >
-          <Archive size={14} />
-          Archive completed
-        </button>
-        <button type="button" onClick={() => props.onArchive('todoList', props.list.id, props.list.title)}>
-          <Archive size={14} />
-          Archive list
-        </button>
-        <button type="button" onClick={() => props.onDelete('todoList', props.list.id, props.list.title)}>
-          <Trash2 size={14} />
-          Trash list
-        </button>
-      </div>
+      {editing && (
+        <div className="button-row todo-editor-actions">
+          <button
+            type="button"
+            aria-label="Archive todo list"
+            title="Archive todo list"
+            onClick={() => props.onArchive('todoList', props.list.id, props.list.title)}
+          >
+            <Archive size={14} />
+          </button>
+          <button
+            type="button"
+            aria-label="Trash todo list"
+            title="Trash todo list"
+            onClick={() => props.onDelete('todoList', props.list.id, props.list.title)}
+          >
+            <Trash2 size={14} />
+          </button>
+        </div>
+      )}
     </article>
   )
 }
@@ -2643,6 +3049,41 @@ function WindowTitle(props: { icon: ReactNode; title: string; action?: ReactNode
   )
 }
 
+function CollapsibleSection(props: {
+  icon: ReactNode
+  title: string
+  defaultOpen?: boolean
+  action?: ReactNode
+  className?: string
+  children: ReactNode
+}) {
+  const [open, setOpen] = useState(props.defaultOpen ?? true)
+  return (
+    <section className={clsx('window-panel collapsible-section', props.className)}>
+      <WindowTitle
+        icon={props.icon}
+        title={props.title}
+        action={
+          <div className="section-title-actions">
+            {props.action}
+            <button
+              type="button"
+              className={clsx('section-toggle', open && 'open')}
+              aria-label={open ? `Collapse ${props.title}` : `Expand ${props.title}`}
+              title={open ? `Collapse ${props.title}` : `Expand ${props.title}`}
+              aria-expanded={open}
+              onClick={() => setOpen((current) => !current)}
+            >
+              <ChevronDown size={14} />
+            </button>
+          </div>
+        }
+      />
+      {open && props.children}
+    </section>
+  )
+}
+
 function Stat(props: { label: string; value: number }) {
   return (
     <div className="stat-card">
@@ -2697,38 +3138,23 @@ function NoteRow(props: {
   )
 }
 
-function RecordList(props: {
-  title: string
-  records: ReturnType<typeof collectRecords>
-  empty: string
-  onArchive: (type: EntityType, id: string, title: string) => void
-  onDelete: (type: EntityType, id: string, title: string) => void
+function ProjectRow(props: {
+  project: Project
+  onOpen: () => void
+  actions?: ReactNode
 }) {
   return (
-    <section className="window-panel">
-      <WindowTitle icon={<Archive size={15} />} title={props.title} />
-      <div className="row-list">
-        {props.records.map((record) => (
-          <RecordRow
-            key={`${record.type}-${record.id}`}
-            record={record}
-            actions={
-              <>
-                <button type="button" onClick={() => props.onArchive(record.type, record.id, recordTitle(record))}>
-                  <Archive size={14} />
-                  Archive
-                </button>
-                <button type="button" onClick={() => props.onDelete(record.type, record.id, recordTitle(record))}>
-                  <Trash2 size={14} />
-                  Trash
-                </button>
-              </>
-            }
-          />
-        ))}
-        {props.records.length === 0 && <EmptyMini body={props.empty} />}
-      </div>
-    </section>
+    <article className="project-row">
+      <button type="button" onClick={props.onOpen}>
+        <span>
+          <span className="color-dot" style={{ background: props.project.color }} />
+          <strong>{props.project.title}</strong>
+        </span>
+        <p>{oneLine(props.project.description, 'No description.')}</p>
+        <small>{props.project.status}</small>
+      </button>
+      {props.actions && <div className="button-row">{props.actions}</div>}
+    </article>
   )
 }
 
@@ -2764,17 +3190,48 @@ function Inspector(props: { title: string; subtitle: string; children: ReactNode
   )
 }
 
-function EditorBlankState(props: { onCreate: () => void }) {
+function EditorBlankState(props: {
+  notes?: Note[]
+  onCreate: () => void
+  onOpen?: (note: Note) => void
+}) {
+  const notes = props.notes ?? []
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [noteId, setNoteId] = useState('')
+  const selectedNote = notes.find((note) => note.id === noteId) ?? notes[0]
+
   return (
     <section className="blank-editor">
       <div>
         <FileText size={28} />
         <h2>No note open.</h2>
         <p>Select a note or start a new one.</p>
-        <button type="button" className="primary-button" onClick={props.onCreate}>
-          <Plus size={15} />
-          New note
-        </button>
+        <div className="blank-editor-actions">
+          <button type="button" className="primary-button" onClick={props.onCreate}>
+            <Plus size={15} />
+            New note
+          </button>
+          {props.onOpen && notes.length > 0 && (
+            <button type="button" onClick={() => setPickerOpen((current) => !current)}>
+              <FolderOpen size={15} />
+              Open note
+            </button>
+          )}
+        </div>
+        {pickerOpen && props.onOpen && notes.length > 0 && (
+          <div className="blank-note-picker">
+            <select value={selectedNote?.id ?? ''} aria-label="Choose note to open" onChange={(event) => setNoteId(event.target.value)}>
+              {notes.map((note) => (
+                <option key={note.id} value={note.id}>
+                  {note.title}
+                </option>
+              ))}
+            </select>
+            <button type="button" onClick={() => selectedNote && props.onOpen?.(selectedNote)} disabled={!selectedNote}>
+              Open
+            </button>
+          </div>
+        )}
       </div>
     </section>
   )
