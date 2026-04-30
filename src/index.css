@@ -35,17 +35,6 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
-:root[data-theme="paper"] {
-  --bg: #fbf4df;
-  --bg-2: #eee0bd;
-  --paper: #fffdf2;
-  --paper-2: #f8f0d6;
-  --yellow: #e9cd6b;
-  --orange: var(--wafy-accent, #c6734a);
-  --green: #90ad89;
-  --blue: #91b1bd;
-}
-
 :root[data-theme="terminal"] {
   --bg: #1c1b18;
   --bg-2: #24221d;
@@ -344,7 +333,8 @@ time {
   grid-row: 3;
   min-height: 0;
   display: grid;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   border-top: 1px solid var(--line-soft);
   padding-top: 10px;
 }
@@ -358,19 +348,24 @@ time {
 }
 
 .pinned-switcher {
+  width: 100%;
+  max-width: 100%;
   min-width: 0;
   min-height: 0;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   gap: 7px;
+  overflow-x: hidden;
 }
 
 .pinned-switcher-header {
+  max-width: 100%;
   min-width: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 6px;
+  overflow: hidden;
 }
 
 .pinned-switcher-header > span {
@@ -404,7 +399,8 @@ time {
   display: grid;
   align-content: start;
   gap: 5px;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .pinned-switcher-list p {
@@ -413,7 +409,12 @@ time {
   padding: 8px 4px;
 }
 
+.pinned-switcher-compact .pinned-switcher-list {
+  gap: 7px;
+}
+
 .pinned-item {
+  max-width: 100%;
   min-width: 0;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -437,6 +438,48 @@ time {
 
 .pinned-item small {
   color: var(--muted);
+}
+
+.pinned-switcher-compact .pinned-item {
+  width: 100%;
+  min-height: 46px;
+  align-items: center;
+  gap: 8px;
+  justify-content: stretch;
+  justify-items: start;
+  padding: 7px 8px;
+  text-align: left;
+  background: rgba(255, 249, 233, 0.64);
+  border: 1px solid rgba(46, 36, 26, 0.52);
+  border-radius: 4px;
+  box-shadow: none;
+}
+
+.pinned-switcher-compact .pinned-item:hover,
+.pinned-switcher-compact .pinned-item:focus-visible {
+  background: rgba(255, 249, 233, 0.9);
+  border-color: var(--line);
+  filter: none;
+}
+
+.pinned-switcher-compact .pinned-item.active {
+  background: var(--paper);
+  border-color: var(--line);
+  box-shadow: inset 3px 0 0 var(--orange);
+}
+
+.pinned-switcher-compact .pinned-item .color-dot,
+.pinned-switcher-compact .pinned-item > svg {
+  align-self: start;
+  margin-top: 3px;
+}
+
+.pinned-switcher-compact .pinned-item strong {
+  line-height: 1.18;
+}
+
+.pinned-switcher-compact .pinned-item small {
+  line-height: 1.2;
 }
 
 .sidebar-footer {
@@ -2393,6 +2436,19 @@ kbd {
   box-shadow: none;
 }
 
+:root[data-theme="terminal"] .pinned-switcher-compact .pinned-item {
+  background: #24221d;
+  border-color: #3a372f;
+  box-shadow: none;
+}
+
+:root[data-theme="terminal"] .pinned-switcher-compact .pinned-item:hover,
+:root[data-theme="terminal"] .pinned-switcher-compact .pinned-item:focus-visible,
+:root[data-theme="terminal"] .pinned-switcher-compact .pinned-item.active {
+  background: #323029;
+  border-color: rgba(201, 162, 74, 0.45);
+}
+
 :root[data-theme="terminal"] .manual-card,
 :root[data-theme="terminal"] .note-picker-list button {
   background: #24221d;
@@ -2659,6 +2715,19 @@ kbd {
   background: var(--wafy-card-bg, #fff1f8);
   border-color: var(--line-soft);
   box-shadow: 2px 2px 0 rgba(155, 79, 119, 0.08);
+}
+
+:root[data-theme="pixel-pink"] .pinned-switcher-compact .pinned-item {
+  background: #fff8fc;
+  border-color: var(--line-soft);
+  box-shadow: none;
+}
+
+:root[data-theme="pixel-pink"] .pinned-switcher-compact .pinned-item:hover,
+:root[data-theme="pixel-pink"] .pinned-switcher-compact .pinned-item:focus-visible,
+:root[data-theme="pixel-pink"] .pinned-switcher-compact .pinned-item.active {
+  background: #fff1f8;
+  border-color: var(--line);
 }
 
 :root[data-theme="pixel-pink"] .manual-grid {

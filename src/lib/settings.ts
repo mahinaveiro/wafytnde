@@ -1,7 +1,8 @@
-import type { AppSettings } from './types'
+import type { AppSettings, ThemeMode } from './types'
 
 const SETTINGS_KEY = 'wafytnde.settings.v1'
 const HEX_COLOR_RE = /^#[0-9a-f]{6}$/i
+const THEME_MODES = new Set<ThemeMode>(['warm', 'terminal', 'pixel-pink'])
 
 export const defaultSettings: AppSettings = {
   theme: 'warm',
@@ -20,6 +21,10 @@ export function normalizeHexColor(value: string) {
 
 export function isValidHexColor(value: string) {
   return Boolean(normalizeHexColor(value))
+}
+
+export function normalizeTheme(value: unknown): ThemeMode {
+  return typeof value === 'string' && THEME_MODES.has(value as ThemeMode) ? (value as ThemeMode) : 'warm'
 }
 
 export function normalizeAppearanceOverrides(value: unknown): AppSettings['appearanceOverrides'] {
@@ -43,7 +48,7 @@ export function normalizeAppearanceOverrides(value: unknown): AppSettings['appea
 }
 
 function normalizeSettings(settings: Partial<AppSettings>): AppSettings {
-  const next: AppSettings = { ...defaultSettings, ...settings }
+  const next: AppSettings = { ...defaultSettings, ...settings, theme: normalizeTheme(settings.theme) }
   const appearanceOverrides = normalizeAppearanceOverrides(settings.appearanceOverrides)
 
   if (appearanceOverrides) {
@@ -59,7 +64,10 @@ export function getSettings(): AppSettings {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY)
     if (!raw) return defaultSettings
-    return normalizeSettings(JSON.parse(raw))
+    const parsed = JSON.parse(raw)
+    const normalized = normalizeSettings(parsed)
+    if (parsed?.theme !== normalized.theme) saveSettings(normalized)
+    return normalized
   } catch {
     return defaultSettings
   }

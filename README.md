@@ -54,7 +54,7 @@ The goal is simple:
 - Command menu for power-user actions.
 - Clear active pin states and icon-only bundle/project archive and trash controls.
 - Archive, restore, trash, permanent delete, and empty trash flows.
-- Settings for Warm Retro, Paper, Night Desk, and Pixel Pink Retro themes, note font, controlled appearance personalization, compact mode, reduced motion, update checks, storage status, offline status, user manual, shortcuts, and app reset.
+- Settings for Warm Retro, Night Desk, and Pixel Pink Retro themes, theme cycling, note font, controlled appearance personalization, compact mode, reduced motion, update checks, storage status, offline status, user manual, shortcuts, and app reset.
 - Update notification flow with manual update check feedback.
 - Mobile user manual for practical in-app guidance.
 - JSON backup export and validated import with merge or replace modes.
@@ -219,6 +219,14 @@ User data is not stored on a server. It lives in IndexedDB on the device. Moving
 - The UI should keep its compact utility character. Avoid generic startup SaaS patterns.
 
 ## Changelog
+
+### v0.4.1 - 2026-04-30
+
+- Removed unused Paper theme.
+- Improved Warm Retro pinned sidebar card styling.
+- Added Pixel Pink Retro to theme toggle cycle.
+- Added Toggle theme action to mobile command menu.
+- Updated user manual theme guidance.
 
 ### v0.4.0 - 2026-04-30
 

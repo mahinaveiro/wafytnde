@@ -1,12 +1,13 @@
-export const APP_VERSION = '0.4.0'
+export const APP_VERSION = '0.4.1'
 
 export const APP_RELEASE_DATE = '2026-04-30'
 
 export const APP_CHANGELOG = [
-  'Added Pixel Pink Retro appearance theme',
-  'Improved theme variable support for optional skins',
-  'Fixed Todo List Save and Cancel actions',
-  'Updated user manual with theme and todo editing guidance',
+  'Removed unused Paper theme',
+  'Improved Warm Retro pinned sidebar card styling',
+  'Added Pixel Pink Retro to theme toggle cycle',
+  'Added Toggle theme action to mobile command menu',
+  'Updated user manual theme guidance',
 ] as const
 
 export function formatAppReleaseDate(date = APP_RELEASE_DATE) {

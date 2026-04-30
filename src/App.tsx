@@ -234,11 +234,6 @@ const appearanceDefaultsByTheme: Record<AppSettings['theme'], ThemeAppearanceDef
     accentColor: '#d56d33',
     primaryTextColor: '#241b14',
   },
-  paper: {
-    topBarColor: '#e9cd6b',
-    accentColor: '#c6734a',
-    primaryTextColor: '#241b14',
-  },
   terminal: {
     topBarColor: '#24221d',
     accentColor: '#b86a2f',
@@ -250,6 +245,7 @@ const appearanceDefaultsByTheme: Record<AppSettings['theme'], ThemeAppearanceDef
     primaryTextColor: '#3b1f2e',
   },
 }
+const themeCycle: AppSettings['theme'][] = ['warm', 'terminal', 'pixel-pink']
 
 const userManualSections: Array<{
   title: string
@@ -279,8 +275,8 @@ const userManualSections: Array<{
     title: 'Appearance',
     body: 'Themes change the whole desk skin. Personalization is a separate layer for small color overrides.',
     items: [
-      'Choose Warm Retro, Paper, Night Desk, or Pixel Pink Retro in Settings.',
-      'Warm Retro remains the default theme.',
+      'Choose Warm Retro, Night Desk, or Pixel Pink Retro in Settings.',
+      'Use Toggle theme in the command menu, or in the mobile quick action drawer.',
       'Reset personalization clears color overrides without changing the selected theme.',
     ],
   },
@@ -370,6 +366,12 @@ function readableStorage(value?: number) {
 
 function getThemeAppearanceDefaults(theme: AppSettings['theme']): ThemeAppearanceDefaults {
   return appearanceDefaultsByTheme[theme]
+}
+
+function nextThemeForCycle(theme: unknown): AppSettings['theme'] {
+  const currentIndex = themeCycle.indexOf(theme as AppSettings['theme'])
+  if (currentIndex < 0) return 'warm'
+  return themeCycle[(currentIndex + 1) % themeCycle.length]
 }
 
 function appearanceDraftFromSettings(settings: AppSettings): AppearanceDraft {
@@ -1086,7 +1088,7 @@ function App() {
     if (command === 'export') void handleExport()
     if (command === 'import') navigate('settings')
     if (command === 'theme') {
-      patchAppSettings({ theme: settings.theme === 'terminal' ? 'warm' : 'terminal' })
+      patchAppSettings({ theme: nextThemeForCycle(settings.theme) })
     }
     if (command === 'inbox') navigate('inbox')
     if (command === 'bundles') navigate('bundles')
@@ -1460,6 +1462,9 @@ function App() {
         bundles={activeBundles}
         notes={activeNotes}
         projects={activeProjects}
+        selectedBundleId={selectedBundleId}
+        selectedNoteId={selectedNoteId}
+        selectedProjectId={selectedProjectId}
         inboxCount={activeCaptures.length}
         storageUsage={storage.usage}
         online={online}
@@ -1522,6 +1527,9 @@ function App() {
           bundles={activeBundles}
           notes={activeNotes}
           projects={activeProjects}
+          selectedBundleId={selectedBundleId}
+          selectedNoteId={selectedNoteId}
+          selectedProjectId={selectedProjectId}
           onClose={() => setMobilePinnedOpen(false)}
           onOpenBundle={(bundle) => {
             setMobilePinnedOpen(false)
@@ -1618,6 +1626,9 @@ function PinnedContentSwitcher(props: {
   notes: Note[]
   projects: Project[]
   mode: 'compact' | 'panel'
+  selectedBundleId?: string
+  selectedNoteId?: string
+  selectedProjectId?: string
   onOpenBundle: (bundle: Bundle) => void
   onOpenNote: (note: Note) => void
   onOpenProject: (project: Project) => void
@@ -1654,7 +1665,12 @@ function PinnedContentSwitcher(props: {
       <div key={category} className="pinned-switcher-list">
         {category === 'bundles' &&
           pinnedBundles.slice(0, props.mode === 'panel' ? 24 : 8).map((bundle) => (
-            <button key={bundle.id} type="button" className="pinned-item" onClick={() => props.onOpenBundle(bundle)}>
+            <button
+              key={bundle.id}
+              type="button"
+              className={clsx('pinned-item', props.selectedBundleId === bundle.id && 'active')}
+              onClick={() => props.onOpenBundle(bundle)}
+            >
               <span className="color-dot" style={{ background: bundle.color }} />
               <span>
                 <strong>{bundle.title}</strong>
@@ -1664,7 +1680,12 @@ function PinnedContentSwitcher(props: {
           ))}
         {category === 'notes' &&
           pinnedNotes.slice(0, props.mode === 'panel' ? 24 : 8).map((note) => (
-            <button key={note.id} type="button" className="pinned-item" onClick={() => props.onOpenNote(note)}>
+            <button
+              key={note.id}
+              type="button"
+              className={clsx('pinned-item', props.selectedNoteId === note.id && 'active')}
+              onClick={() => props.onOpenNote(note)}
+            >
               <Pin size={12} />
               <span>
                 <strong>{note.title}</strong>
@@ -1674,7 +1695,12 @@ function PinnedContentSwitcher(props: {
           ))}
         {category === 'projects' &&
           pinnedProjects.slice(0, props.mode === 'panel' ? 24 : 8).map((project) => (
-            <button key={project.id} type="button" className="pinned-item" onClick={() => props.onOpenProject(project)}>
+            <button
+              key={project.id}
+              type="button"
+              className={clsx('pinned-item', props.selectedProjectId === project.id && 'active')}
+              onClick={() => props.onOpenProject(project)}
+            >
               <span className="color-dot" style={{ background: project.color }} />
               <span>
                 <strong>{project.title}</strong>
@@ -1696,6 +1722,9 @@ function Sidebar(props: {
   bundles: Bundle[]
   notes: Note[]
   projects: Project[]
+  selectedBundleId?: string
+  selectedNoteId?: string
+  selectedProjectId?: string
   inboxCount: number
   storageUsage?: number
   online: boolean
@@ -1743,6 +1772,9 @@ function Sidebar(props: {
             bundles={props.bundles}
             notes={props.notes}
             projects={props.projects}
+            selectedBundleId={props.selectedBundleId}
+            selectedNoteId={props.selectedNoteId}
+            selectedProjectId={props.selectedProjectId}
             onOpenBundle={props.onOpenBundle}
             onOpenNote={props.onOpenNote}
             onOpenProject={props.onOpenProject}
@@ -2414,7 +2446,7 @@ function NoteListPanel(props: {
     <div className="panel-stack">
       <PanelHeader
         eyebrow="Notes"
-        title="Paper drawer"
+        title="Note drawer"
         actions={
           <button type="button" className="primary-button" onClick={props.onCreate}>
             <Plus size={15} />
@@ -2680,7 +2712,6 @@ function SettingsPanel(props: {
               onChange={(event) => props.onPatch({ theme: event.target.value as AppSettings['theme'] })}
             >
               <option value="warm">Warm Retro</option>
-              <option value="paper">Paper</option>
               <option value="terminal">Night Desk</option>
               <option value="pixel-pink">Pixel Pink Retro</option>
             </select>
@@ -3880,6 +3911,9 @@ function MobilePinnedDrawer(props: {
   bundles: Bundle[]
   notes: Note[]
   projects: Project[]
+  selectedBundleId?: string
+  selectedNoteId?: string
+  selectedProjectId?: string
   onClose: () => void
   onOpenBundle: (bundle: Bundle) => void
   onOpenNote: (note: Note) => void
@@ -3892,6 +3926,9 @@ function MobilePinnedDrawer(props: {
         bundles={props.bundles}
         notes={props.notes}
         projects={props.projects}
+        selectedBundleId={props.selectedBundleId}
+        selectedNoteId={props.selectedNoteId}
+        selectedProjectId={props.selectedProjectId}
         onOpenBundle={props.onOpenBundle}
         onOpenNote={props.onOpenNote}
         onOpenProject={props.onOpenProject}
@@ -3909,6 +3946,7 @@ function MobileCommandDrawer(props: {
     { id: 'new-note', label: 'New note' },
     { id: 'new-bundle', label: 'New bundle' },
     { id: 'quick-capture', label: 'Capture' },
+    { id: 'theme', label: 'Toggle theme' },
     { id: 'export', label: 'Export' },
     { id: 'import', label: 'Import' },
     { id: 'inbox', label: 'Go to Inbox' },
