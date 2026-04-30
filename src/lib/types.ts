@@ -13,7 +13,7 @@ export type EntityType =
 
 export type ParentType = 'bundle' | 'project' | 'note'
 export type ProjectStatus = 'idea' | 'active' | 'paused' | 'completed' | 'archived'
-export type ThemeMode = 'warm' | 'paper' | 'terminal'
+export type ThemeMode = 'warm' | 'paper' | 'terminal' | 'pixel-pink'
 export type FontMode = 'sans' | 'serif' | 'mono'
 
 export interface AppearanceOverrides {

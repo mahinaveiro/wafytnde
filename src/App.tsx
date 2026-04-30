@@ -244,6 +244,11 @@ const appearanceDefaultsByTheme: Record<AppSettings['theme'], ThemeAppearanceDef
     accentColor: '#b86a2f',
     primaryTextColor: '#e6e0d2',
   },
+  'pixel-pink': {
+    topBarColor: '#f6a7cf',
+    accentColor: '#e94f9c',
+    primaryTextColor: '#3b1f2e',
+  },
 }
 
 const userManualSections: Array<{
@@ -264,7 +269,20 @@ const userManualSections: Array<{
   {
     title: 'Todo lists',
     body: 'Todo cards have an edit mode hidden in plain sight.',
-    items: ['To edit a todo list title, click on its background area.', 'Use the task field inside edit mode to add more tasks.'],
+    items: [
+      'To edit a todo list title, click on its background area.',
+      'Save commits the title and any new task, then exits edit mode.',
+      'Cancel discards unsaved todo list changes and restores the previous title.',
+    ],
+  },
+  {
+    title: 'Appearance',
+    body: 'Themes change the whole desk skin. Personalization is a separate layer for small color overrides.',
+    items: [
+      'Choose Warm Retro, Paper, Night Desk, or Pixel Pink Retro in Settings.',
+      'Warm Retro remains the default theme.',
+      'Reset personalization clears color overrides without changing the selected theme.',
+    ],
   },
   {
     title: 'Organization system',
@@ -837,6 +855,39 @@ function App() {
     }
   }
 
+  function openTodoParentById(parentType: ParentType, parentId: string) {
+    if (parentType === 'bundle') {
+      setSelectedBundleId(parentId)
+      setSelectedProjectId(undefined)
+      setSelectedNoteId(undefined)
+      setBundleTab('overview')
+      navigate('bundle')
+      return
+    }
+    if (parentType === 'project') {
+      const project = data.projects.find((item) => item.id === parentId)
+      setSelectedBundleId(project?.bundleId ?? selectedBundleId)
+      setSelectedProjectId(parentId)
+      setSelectedNoteId(undefined)
+      navigate('project')
+      return
+    }
+
+    const note = data.notes.find((item) => item.id === parentId)
+    if (note) {
+      if (note.projectId) {
+        const project = data.projects.find((item) => item.id === note.projectId)
+        setSelectedProjectId(project?.id)
+        setSelectedBundleId(project?.bundleId ?? note.bundleId)
+      } else {
+        setSelectedProjectId(undefined)
+        setSelectedBundleId(note.bundleId)
+      }
+    }
+    setSelectedNoteId(parentId)
+    navigate('note')
+  }
+
   async function handleCreateBundle(title = 'Untitled bundle') {
     const bundle = await createBundle(title)
     openBundle(bundle)
@@ -890,7 +941,7 @@ function App() {
     setNewTodoListId(list.id)
     setTodoSectionExpanded(todoSectionKey(targetType, targetId), true)
     pushToast('Todo list created.')
-    openTodoParent(list)
+    openTodoParentById(targetType, targetId)
     return list
   }
 
@@ -2631,6 +2682,7 @@ function SettingsPanel(props: {
               <option value="warm">Warm Retro</option>
               <option value="paper">Paper</option>
               <option value="terminal">Night Desk</option>
+              <option value="pixel-pink">Pixel Pink Retro</option>
             </select>
           </label>
           <label>
@@ -3521,6 +3573,7 @@ function TodoListCard(props: {
   onDelete: (type: EntityType, id: string, title: string) => void
 }) {
   const [editing, setEditing] = useState(Boolean(props.startEditing))
+  const [saving, setSaving] = useState(false)
   const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('all')
   const [text, setText] = useState('')
   const [draftTitle, setDraftTitle] = useState(props.list.title)
@@ -3529,7 +3582,6 @@ function TodoListCard(props: {
   const nextTitle = draftTitle.trim() || 'New todo list'
   const titleChanged = nextTitle !== props.list.title
   const taskChanged = text.trim().length > 0
-  const canSave = titleChanged || taskChanged
   const visibleItems = props.items.filter((item) => {
     if (filter === 'active') return !item.completed
     if (filter === 'completed') return item.completed
@@ -3538,7 +3590,12 @@ function TodoListCard(props: {
   function enterEditMode(event: MouseEvent<HTMLElement>) {
     const target = event.target
     if (target instanceof HTMLElement && target.closest('button,input,label,select,textarea,a')) return
+    setDraftTitle(props.list.title)
+    setText('')
     setEditing(true)
+  }
+  function stopTodoControlClick(event: MouseEvent<HTMLElement>) {
+    event.stopPropagation()
   }
   async function saveTitleIfNeeded() {
     if (titleChanged) {
@@ -3555,13 +3612,18 @@ function TodoListCard(props: {
     window.setTimeout(() => taskInputRef.current?.focus(), 0)
   }
   async function saveEdits() {
-    if (!canSave) return
-    await saveTitleIfNeeded()
-    if (taskChanged) {
-      await createTodoItem(props.list.id, text.trim())
+    if (saving) return
+    setSaving(true)
+    try {
+      await saveTitleIfNeeded()
+      if (taskChanged) {
+        await createTodoItem(props.list.id, text.trim())
+      }
+      setText('')
+      setEditing(false)
+    } finally {
+      setSaving(false)
     }
-    setText('')
-    setEditing(false)
   }
   function cancelEdits() {
     setDraftTitle(props.list.title)
@@ -3571,18 +3633,30 @@ function TodoListCard(props: {
   return (
     <article className={clsx('todo-card', editing && 'editing')} onClick={enterEditMode}>
       {editing && (
-        <div className="todo-card-controls">
+        <div className="todo-card-controls" onClick={stopTodoControlClick}>
           <button
             type="button"
             className="mac-control save"
             aria-label="Save todo list"
             title="Save todo list"
-            disabled={!canSave}
-            onClick={() => void saveEdits()}
+            disabled={saving}
+            onClick={(event) => {
+              event.stopPropagation()
+              void saveEdits()
+            }}
           >
             <Check size={12} />
           </button>
-          <button type="button" className="mac-control close" aria-label="Cancel todo edits" title="Cancel todo edits" onClick={cancelEdits}>
+          <button
+            type="button"
+            className="mac-control close"
+            aria-label="Cancel todo edits"
+            title="Cancel todo edits"
+            onClick={(event) => {
+              event.stopPropagation()
+              cancelEdits()
+            }}
+          >
             <X size={12} />
           </button>
         </div>
@@ -3606,7 +3680,15 @@ function TodoListCard(props: {
         <>
           <div className="segmented">
             {(['all', 'active', 'completed'] as const).map((mode) => (
-              <button key={mode} type="button" className={clsx(filter === mode && 'active')} onClick={() => setFilter(mode)}>
+              <button
+                key={mode}
+                type="button"
+                className={clsx(filter === mode && 'active')}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  setFilter(mode)
+                }}
+              >
                 {mode}
               </button>
             ))}
@@ -3648,7 +3730,8 @@ function TodoListCard(props: {
                   aria-label="Move todo up"
                   title="Move todo up"
                   disabled={index === 0}
-                  onClick={() => {
+                  onClick={(event) => {
+                    event.stopPropagation()
                     const previous = visibleItems[index - 1]
                     if (!previous) return
                     void updateTodoItem(item.id, { order: previous.order - 1 })
@@ -3660,7 +3743,10 @@ function TodoListCard(props: {
                   type="button"
                   aria-label="Delete todo"
                   title="Delete todo"
-                  onClick={() => void softDeleteRecord('todoItem', item.id)}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    void softDeleteRecord('todoItem', item.id)
+                  }}
                 >
                   <X size={13} />
                 </button>
@@ -3676,7 +3762,10 @@ function TodoListCard(props: {
             type="button"
             aria-label="Archive todo list"
             title="Archive todo list"
-            onClick={() => props.onArchive('todoList', props.list.id, props.list.title)}
+            onClick={(event) => {
+              event.stopPropagation()
+              props.onArchive('todoList', props.list.id, props.list.title)
+            }}
           >
             <Archive size={14} />
           </button>
@@ -3684,7 +3773,10 @@ function TodoListCard(props: {
             type="button"
             aria-label="Trash todo list"
             title="Trash todo list"
-            onClick={() => props.onDelete('todoList', props.list.id, props.list.title)}
+            onClick={(event) => {
+              event.stopPropagation()
+              props.onDelete('todoList', props.list.id, props.list.title)
+            }}
           >
             <Trash2 size={14} />
           </button>
